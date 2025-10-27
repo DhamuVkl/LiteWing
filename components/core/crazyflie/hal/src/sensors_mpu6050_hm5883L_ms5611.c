@@ -525,7 +525,7 @@ static void sensorsDeviceInit(void)
 
     if (flowdeck2Test() == true) {
         isPmw3901Present = true;
-        setCommandermode(POSHOLD_MODE);
+        //setCommandermode(POSHOLD_MODE);
         DEBUG_PRINTI("PMW3901 SPI connection [OK].\n");
     } else {
         //TODO: Should sensor test fail hard if no connection
