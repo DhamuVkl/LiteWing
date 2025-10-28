@@ -38,6 +38,7 @@
 #include "log.h"
 #include "ledseq.h"
 #include "neopixel.h"
+#include "neopixel_crtp.h"
 #include "adc_esp32.h"
 #include "pm_esplane.h"
 #include "config.h"
@@ -140,6 +141,7 @@ void systemInit(void)
   workerInit();
   adcInit();
   ledseqInit();
+  neopixelCrtpInit(); // Initialize NeoPixel CRTP control
   pmInit();
   buzzerInit();
   //  peerLocalizationInit();
@@ -241,14 +243,14 @@ void systemTask(void *arg)
     soundSetEffect(SND_STARTUP);
     ledseqRun(&seq_alive);
     ledseqRun(&seq_testPassed);
-    /* Initialize NeoPixel on GPIO20 with 4 LEDs and start blinking immediately */
+    // /* Initialize NeoPixel on GPIO20 with 4 LEDs and start blinking immediately */
     neopixelInit(20, 4);
-    neopixelSetPixelColor(0, 0, 255, 0);
-    neopixelSetPixelColor(1, 0, 255, 0);
-    neopixelSetPixelColor(2, 0, 0, 255);
-    neopixelSetPixelColor(3, 0, 0, 255);
-    neopixelShow();
-    neopixelStartBlink(500, 50);
+    // neopixelSetPixelColor(0, 0, 255, 0);
+    // neopixelSetPixelColor(1, 0, 255, 0);
+    // neopixelSetPixelColor(2, 0, 0, 255);
+    // neopixelSetPixelColor(3, 0, 0, 255);
+    // neopixelShow();
+    // neopixelStartBlink(500, 50);
   }
   else
   {
