@@ -39,6 +39,7 @@
 #include "ledseq.h"
 #include "neopixel.h"
 #include "neopixel_crtp.h"
+#include "crtp.h"
 #include "adc_esp32.h"
 #include "pm_esplane.h"
 #include "config.h"
@@ -251,10 +252,13 @@ void systemTask(void *arg)
     neopixelSetPixelColor(3, 0, 0, 255);
     neopixelShow();
     neopixelStartBlink(500, 50);
-    /* Wait 5 seconds while NeoPixel blinks, then stop the blinking and leave the
-      LEDs in their current (last shown) state. Use FreeRTOS vTaskDelay via
-      the M2T macro to convert milliseconds to ticks. */
-    vTaskDelay(M2T(5000));
+    /* Keep blinking until a CRTP client (laptop/mobile) is connected. Poll
+       crtpIsConnected() and sleep briefly between checks to avoid busy-looping. */
+    while (!crtpIsConnected())
+    {
+      vTaskDelay(M2T(100));
+    }
+    /* Stop blinking when connected and keep LEDs in their last shown state. */
     neopixelStopBlink();
   }
   else
