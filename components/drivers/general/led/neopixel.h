@@ -15,6 +15,10 @@ void neopixelInit(int gpio_num, int led_count);
 // Set pixel color at index (0-based). Color format is RGB (0-255)
 void neopixelSetPixelColor(int idx, uint8_t r, uint8_t g, uint8_t b);
 
+// Set all pixels to the same RGB color and update the strip (show).
+// This is a convenience helper for setting a static/solid color.
+void neopixelSetAllColor(uint8_t r, uint8_t g, uint8_t b);
+
 // Send pixel buffer to the strip
 void neopixelShow(void);
 

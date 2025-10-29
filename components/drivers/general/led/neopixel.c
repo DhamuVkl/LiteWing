@@ -128,6 +128,28 @@ void neopixelSetPixelColor(int idx, uint8_t r, uint8_t g, uint8_t b)
     s_buffer[idx * 3 + 2] = b;
 }
 
+// Set all pixels to the same RGB color and immediately show it.
+void neopixelSetAllColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    if (!s_buffer || s_led_count <= 0)
+        return;
+
+    for (int i = 0; i < s_led_count; ++i)
+    {
+        s_buffer[i * 3 + 0] = r;
+        s_buffer[i * 3 + 1] = g;
+        s_buffer[i * 3 + 2] = b;
+    }
+
+    if (s_items)
+    {
+        free(s_items);
+        s_items = NULL;
+    }
+    neopixel_build_rmt_items();
+    neopixelShow();
+}
+
 void neopixelShow(void)
 {
     if (!s_items)
