@@ -103,6 +103,7 @@ void powerStop()
     neopixelSetPixelColor(3, 255, 0, 0);
     neopixelShow();
     neopixelStartBlink(500, 500);
+    //neopixelSetAllColor(255, 0, 0); // Set all to solid red
     neopixel_blinking = true;
   }
 }
