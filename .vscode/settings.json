@@ -9,5 +9,9 @@
   "idf.flashType": "UART",
   "python-envs.defaultEnvManager": "ms-python.python:system",
   "python-envs.defaultPackageManager": "ms-python.python:pip",
-  "python-envs.pythonProjects": []
+  "python-envs.pythonProjects": [],
+  "files.associations": {
+    "neopixel_crtp.h": "c"
+  },
+  "C_Cpp.errorSquiggles": "disabled"
 }
