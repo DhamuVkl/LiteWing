@@ -6,5 +6,8 @@
     "IDF_TARGET": "esp32s3"
   },
   "idf.portWin": "COM9",
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "python-envs.defaultPackageManager": "ms-python.python:pip",
+  "python-envs.pythonProjects": []
 }
