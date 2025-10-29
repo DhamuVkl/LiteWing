@@ -34,19 +34,27 @@
 #include "num.h"
 #include "platform.h"
 #include "motors.h"
+#include "neopixel.h"
 #define DEBUG_MODULE "PWR_DIST"
 #include "debug_cf.h"
 
 static bool motorSetEnable = false;
 
-static struct {
+/* Track whether we've started the NeoPixel error blink to avoid
+ * repeatedly creating/deleting timers from the high-rate power loop.
+ */
+static bool neopixel_blinking = false;
+
+static struct
+{
   uint32_t m1;
   uint32_t m2;
   uint32_t m3;
   uint32_t m4;
 } motorPower;
 
-static struct {
+static struct
+{
   uint16_t m1;
   uint16_t m2;
   uint16_t m3;
@@ -81,27 +89,43 @@ void powerStop()
   motorsSetRatio(MOTOR_M2, 0);
   motorsSetRatio(MOTOR_M3, 0);
   motorsSetRatio(MOTOR_M4, 0);
+
+  /* Indicate emergency / motors disabled by blinking NeoPixel in red.
+   * Only start the blink on the transition to stopped, not on every call
+   * to avoid heap/timer churn from the high-rate control loop.
+   */
+  if (!neopixel_blinking)
+  {
+    neopixelClear();
+    neopixelSetPixelColor(0, 255, 0, 0);
+    neopixelSetPixelColor(1, 255, 0, 0);
+    neopixelSetPixelColor(2, 255, 0, 0);
+    neopixelSetPixelColor(3, 255, 0, 0);
+    neopixelShow();
+    neopixelStartBlink(500, 500);
+    neopixel_blinking = true;
+  }
 }
 
 void powerDistribution(const control_t *control)
 {
-  #ifdef QUAD_FORMATION_X
-    int16_t r = control->roll / 2.0f;
-    int16_t p = control->pitch / 2.0f;
-    motorPower.m1 = limitThrust(control->thrust - r + p + control->yaw);
-    motorPower.m2 = limitThrust(control->thrust - r - p - control->yaw);
-    motorPower.m3 =  limitThrust(control->thrust + r - p + control->yaw);
-    motorPower.m4 =  limitThrust(control->thrust + r + p - control->yaw);
-  #else // QUAD_FORMATION_NORMAL
-    motorPower.m1 = limitThrust(control->thrust + control->pitch +
-                               control->yaw);
-    motorPower.m2 = limitThrust(control->thrust - control->roll -
-                               control->yaw);
-    motorPower.m3 =  limitThrust(control->thrust - control->pitch +
-                               control->yaw);
-    motorPower.m4 =  limitThrust(control->thrust + control->roll -
-                               control->yaw);
-  #endif
+#ifdef QUAD_FORMATION_X
+  int16_t r = control->roll / 2.0f;
+  int16_t p = control->pitch / 2.0f;
+  motorPower.m1 = limitThrust(control->thrust - r + p + control->yaw);
+  motorPower.m2 = limitThrust(control->thrust - r - p - control->yaw);
+  motorPower.m3 = limitThrust(control->thrust + r - p + control->yaw);
+  motorPower.m4 = limitThrust(control->thrust + r + p - control->yaw);
+#else // QUAD_FORMATION_NORMAL
+  motorPower.m1 = limitThrust(control->thrust + control->pitch +
+                              control->yaw);
+  motorPower.m2 = limitThrust(control->thrust - control->roll -
+                              control->yaw);
+  motorPower.m3 = limitThrust(control->thrust - control->pitch +
+                              control->yaw);
+  motorPower.m4 = limitThrust(control->thrust + control->roll -
+                              control->yaw);
+#endif
 
   if (motorSetEnable)
   {
@@ -112,16 +136,28 @@ void powerDistribution(const control_t *control)
   }
   else
   {
-    if (motorPower.m1 < idleThrust) {
+    /* Stop any NeoPixel error blink when motors are driven normally. Only
+     * stop if we previously started it to avoid repeated stop calls.
+     */
+    if (neopixel_blinking)
+    {
+      neopixelStopBlink();
+      neopixel_blinking = false;
+    }
+    if (motorPower.m1 < idleThrust)
+    {
       motorPower.m1 = idleThrust;
     }
-    if (motorPower.m2 < idleThrust) {
+    if (motorPower.m2 < idleThrust)
+    {
       motorPower.m2 = idleThrust;
     }
-    if (motorPower.m3 < idleThrust) {
+    if (motorPower.m3 < idleThrust)
+    {
       motorPower.m3 = idleThrust;
     }
-    if (motorPower.m4 < idleThrust) {
+    if (motorPower.m4 < idleThrust)
+    {
       motorPower.m4 = idleThrust;
     }
 
