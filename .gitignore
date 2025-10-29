@@ -1,0 +1,29 @@
+# Build directory and all its contents
+build/
+build/*
+
+# ESP-IDF specific build artifacts
+sdkconfig.old
+*.o
+*.d
+*.pyc
+__pycache__/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Binary files
+*.bin
+*.elf
+*.map
+
+# Log files
+*.log
+
+# Python cache files
+*.pyc
+__pycache__/
+.pytest_cache/
