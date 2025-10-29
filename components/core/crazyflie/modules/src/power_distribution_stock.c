@@ -97,10 +97,10 @@ void powerStop()
   if (!neopixel_blinking)
   {
     neopixelClear();
-    neopixelSetPixelColor(0, 255, 0, 0);
-    neopixelSetPixelColor(1, 255, 0, 0);
-    neopixelSetPixelColor(2, 255, 0, 0);
-    neopixelSetPixelColor(3, 255, 0, 0);
+    neopixelSetPixelColor(1, 255, 255, 0);
+    neopixelSetPixelColor(0, 255, 255, 0);
+    neopixelSetPixelColor(2, 255, 255, 0);
+    neopixelSetPixelColor(3, 255, 255, 0);
     neopixelShow();
     neopixelStartBlink(500, 500);
     //neopixelSetAllColor(255, 0, 0); // Set all to solid red
