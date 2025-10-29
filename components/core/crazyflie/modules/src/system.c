@@ -245,12 +245,17 @@ void systemTask(void *arg)
     ledseqRun(&seq_testPassed);
     // /* Initialize NeoPixel on GPIO20 with 4 LEDs and start blinking immediately */
     neopixelInit(20, 4);
-    // neopixelSetPixelColor(0, 0, 255, 0);
-    // neopixelSetPixelColor(1, 0, 255, 0);
-    // neopixelSetPixelColor(2, 0, 0, 255);
-    // neopixelSetPixelColor(3, 0, 0, 255);
-    // neopixelShow();
-    // neopixelStartBlink(500, 50);
+    neopixelSetPixelColor(0, 0, 255, 0);
+    neopixelSetPixelColor(1, 0, 255, 0);
+    neopixelSetPixelColor(2, 0, 0, 255);
+    neopixelSetPixelColor(3, 0, 0, 255);
+    neopixelShow();
+    neopixelStartBlink(500, 50);
+    /* Wait 5 seconds while NeoPixel blinks, then stop the blinking and leave the
+      LEDs in their current (last shown) state. Use FreeRTOS vTaskDelay via
+      the M2T macro to convert milliseconds to ticks. */
+    vTaskDelay(M2T(5000));
+    neopixelStopBlink();
   }
   else
   {
