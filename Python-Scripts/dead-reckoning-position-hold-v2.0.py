@@ -5,16 +5,126 @@ from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 import tkinter as tk
-from tkinter import ttk  # Import ttk for better-looking widgets
+from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.animation as animation
 import numpy as np
 import csv
-import os
 from datetime import datetime
 
+# === CONSTANTS ===
+# CRTP and NeoPixel constants
+CRTP_PORT_NEOPIXEL = 0x09
+NEOPIXEL_CHANNEL_SET_PIXEL = 0x00
+NEOPIXEL_CHANNEL_SHOW = 0x01
+NEOPIXEL_CHANNEL_CLEAR = 0x02
+NEOPIXEL_CHANNEL_BLINK = 0x03
+NP_SEND_RETRIES = 3
+NP_PACKET_DELAY = 0.02
+NP_LINK_SETUP_DELAY = 0.12
 
+# Flight parameters
+DRONE_URI = "udp://192.168.43.42"
+TARGET_HEIGHT = 0.3
+TAKEOFF_TIME = 1.5
+HOVER_DURATION = 10.0
+LANDING_TIME = 1.0
+DEBUG_MODE = False
+VELOCITY_SMOOTHING_ALPHA = 0.9
+TRIM_VX = 0.0
+TRIM_VY = -0.4
+
+# PID parameters
+POSITION_KP = 1.2
+POSITION_KI = 0.0
+POSITION_KD = 0.0
+VELOCITY_KP = 1.2
+VELOCITY_KI = 0.0
+VELOCITY_KD = 0.0
+MAX_CORRECTION = 0.095
+VELOCITY_THRESHOLD = 0.005
+DRIFT_COMPENSATION_RATE = 0.002
+PERIODIC_RESET_INTERVAL = 30.0
+MAX_POSITION_ERROR = 2.0
+
+# Sensor parameters
+SENSOR_PERIOD_MS = 10
+DT = SENSOR_PERIOD_MS / 1000.0
+CONTROL_UPDATE_RATE = 0.02
+DEG_TO_RAD = 3.14159 / 180.0
+OPTICAL_FLOW_SCALE = 3.7
+USE_HEIGHT_SCALING = False
+
+# === GLOBAL VARIABLES ===
+# Sensor data
+current_height = 0.0
+motion_delta_x = 0
+motion_delta_y = 0
+sensor_data_ready = False
+
+# Logging
+log_file = None
+log_writer = None
+
+# Battery data
+current_battery_voltage = 0.0
+battery_data_ready = False
+
+# Velocity tracking
+current_vx = 0.0
+current_vy = 0.0
+velocity_x_history = [0.0, 0.0]
+velocity_y_history = [0.0, 0.0]
+
+# Dead reckoning
+integrated_position_x = 0.0
+integrated_position_y = 0.0
+last_integration_time = time.time()
+last_reset_time = time.time()
+
+# Control corrections
+current_correction_vx = 0.0
+current_correction_vy = 0.0
+
+# PID state
+position_integral_x = 0.0
+position_integral_y = 0.0
+position_derivative_x = 0.0
+position_derivative_y = 0.0
+last_position_error_x = 0.0
+last_position_error_y = 0.0
+velocity_integral_x = 0.0
+velocity_integral_y = 0.0
+velocity_derivative_x = 0.0
+velocity_derivative_y = 0.0
+last_velocity_error_x = 0.0
+last_velocity_error_y = 0.0
+
+# Flight state
+flight_phase = "IDLE"
+flight_active = False
+sensor_test_active = False
+scf_instance = None
+position_integration_enabled = False
+
+# Data history
+max_history_points = 200
+time_history = []
+velocity_x_history_plot = []
+velocity_y_history_plot = []
+position_x_history = []
+position_y_history = []
+correction_vx_history = []
+correction_vy_history = []
+height_history = []
+complete_trajectory_x = []
+complete_trajectory_y = []
+start_time = None
+neo_controller = None
+
+
+# === HELPER FUNCTIONS ===
 # Inline robust CRTP send + NeoPixel helpers (copied/adapted from neopixel_control.py)
 def _send_crtp_with_fallback(cf, port, channel, payload: bytes):
     header = ((port & 0x0F) << 4) | (channel & 0x0F)
@@ -95,19 +205,6 @@ def _send_crtp_with_fallback(cf, port, channel, payload: bytes):
 
 
 # NeoPixel utility wrappers that reuse the same Crazyflie link
-CRTP_PORT_NEOPIXEL = 0x09
-NEOPIXEL_CHANNEL_SET_PIXEL = 0x00
-NEOPIXEL_CHANNEL_SHOW = 0x01
-NEOPIXEL_CHANNEL_CLEAR = 0x02
-NEOPIXEL_CHANNEL_BLINK = 0x03
-# Note: SET_ALL is implemented by sending SET_PIXEL with index 0xFF (broadcast)
-
-# NeoPixel send tuning
-NP_SEND_RETRIES = 3
-NP_PACKET_DELAY = 0.02  # seconds between packets
-NP_LINK_SETUP_DELAY = 0.12  # wait after opening link before sending
-
-
 def np_set_pixel(cf, index, r, g, b):
     _send_crtp_with_fallback(
         cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SET_PIXEL, bytes([index, r, g, b])
