@@ -24,7 +24,15 @@ static void neopixelCrtpCB(CRTPPacket *pk)
             uint8_t r = pk->data[1];
             uint8_t g = pk->data[2];
             uint8_t b = pk->data[3];
-            neopixelSetPixelColor(idx, r, g, b);
+            // Special broadcast index: set all pixels to same color
+            if (idx == NEOPIXEL_BROADCAST_INDEX)
+            {
+                neopixelSetAllColor(r, g, b);
+            }
+            else
+            {
+                neopixelSetPixelColor(idx, r, g, b);
+            }
         }
         break;
 
@@ -52,6 +60,11 @@ static void neopixelCrtpCB(CRTPPacket *pk)
             }
         }
         break;
+
+        /* NOTE: We use the special broadcast index (0xFF) on SET_PIXEL to indicate
+         * a "set all" operation. Defining extra CRTP channel values above 0x03
+         * is unsafe because the packet 'channel' field is only 2 bits wide
+         * in the CRTP implementation used here. See neopixel_crtp.h for details. */
 
     default:
         break;
