@@ -129,7 +129,7 @@ neo_controller = None
 
 
 # === HELPER FUNCTIONS ===
-# Inline robust CRTP send + NeoPixel helpers (copied/adapted from neopixel_control.py)
+# Inline robust CRTP send + NeoPixel helpers (adapted from neopixel_control.py)
 def _send_crtp_with_fallback(cf, port, channel, payload: bytes):
     header = ((port & 0x0F) << 4) | (channel & 0x0F)
 
@@ -672,6 +672,7 @@ class DeadReckoningGUI:
         self.neo_cf = None
         self._neo_owns_link = False
         self.blinking = False
+        self.low_battery_blinking = False  # Flag for low battery blink
         # Persistent last color for NeoPixels. This is used so blinking and
         # static color are independent and stopping blink does not lose the
         # previously-set color. Initialize from the UI defaults.
@@ -715,15 +716,14 @@ class DeadReckoningGUI:
         )
         self.sensor_test_button.pack(side=tk.LEFT, padx=10)
 
-        self.stop_button = tk.Button(
+        # Enable logging checkbox for sensor test
+        self.enable_sensor_logging_var = tk.BooleanVar(value=False)
+        self.enable_sensor_logging_check = tk.Checkbutton(
             control_frame,
-            text="Emergency Stop",
-            command=self.emergency_stop,
-            bg="red",
-            fg="white",
-            font=("Arial", 12),
+            text="Log Sensor Test",
+            variable=self.enable_sensor_logging_var,
         )
-        self.stop_button.pack(side=tk.LEFT, padx=10)
+        self.enable_sensor_logging_check.pack(side=tk.LEFT, padx=(10, 0))
 
         # Blink NeoPixel button - New button
         self.blink_button = tk.Button(
@@ -803,40 +803,48 @@ class DeadReckoningGUI:
         )
         self.status_label.pack(side=tk.LEFT, padx=20)
 
-        # Combined frame for Real-time values and Runtime Parameters
-        combined_frame = tk.Frame(self.root)
-        combined_frame.pack(fill=tk.X, padx=10, pady=5)
+        # Main frame for layout
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        # Real-time values display (Left side)
-        values_frame = tk.LabelFrame(
-            combined_frame, text="Real-Time Values", padx=10, pady=10
-        )
-        values_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        # Left side - Parameters
+        left_frame = tk.Frame(main_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
 
-        # Create value displays in a grid
-        self.create_value_displays(values_frame)
-
-        # Runtime Adjustable Parameters (Right side)
+        # Flight Control Parameters
         runtime_frame = tk.LabelFrame(
-            combined_frame, text="Runtime Adjustable Parameters", padx=10, pady=10
+            left_frame, text="Flight Control Parameters", padx=10, pady=10
         )
-        runtime_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        runtime_frame.pack(fill=tk.X, pady=5)
 
         # Create runtime controls
         self.create_runtime_controls(runtime_frame)
 
-        # PID Tuning Controls (Half width)
+        # PID Tuning Controls
         pid_frame = tk.LabelFrame(
-            self.root, text="PID Tuning Controls", padx=10, pady=10
+            left_frame, text="PID Tuning Controls", padx=10, pady=10
         )
-        pid_frame.pack(fill=tk.X, padx=10, pady=5, side=tk.LEFT, anchor=tk.W)
+        pid_frame.pack(fill=tk.X, pady=5)
 
         # Create PID tuning controls
         self.create_pid_controls(pid_frame)
 
-        # Matplotlib figure
-        self.fig = Figure(figsize=(14, 8))
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
+        # Right side - Values and Plots
+        right_frame = tk.Frame(main_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+
+        # Real-time values display (Top of right side)
+        values_frame = tk.LabelFrame(
+            right_frame, text="Real-Time Values", padx=10, pady=10
+        )
+        values_frame.pack(fill=tk.X, pady=5)
+
+        # Create value displays in a grid
+        self.create_value_displays(values_frame)
+
+        # Matplotlib figure (Bottom of right side, expanded)
+        self.fig = Figure(figsize=(12, 10))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=right_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def create_value_displays(self, parent):
@@ -902,9 +910,21 @@ class DeadReckoningGUI:
     # --- NEW FUNCTION: create_runtime_controls ---
     def create_runtime_controls(self, parent):
         """Create runtime adjustable parameter controls"""
-        # Use ttk for better-looking widgets
+        # Main frame for runtime controls
+        runtime_main_frame = tk.Frame(parent)
+        runtime_main_frame.pack(fill=tk.X, pady=2)
+
+        # Left column
+        left_col = tk.Frame(runtime_main_frame)
+        left_col.pack(side=tk.LEFT, fill=tk.Y, expand=True, padx=(0, 5))
+
+        # Right column
+        right_col = tk.Frame(runtime_main_frame)
+        right_col.pack(side=tk.RIGHT, fill=tk.Y, expand=True, padx=(5, 0))
+
+        # Left column parameters
         # Target Height
-        target_height_frame = tk.Frame(parent)
+        target_height_frame = tk.Frame(left_col)
         target_height_frame.pack(fill=tk.X, pady=2)
         tk.Label(target_height_frame, text="Target Height (m):", width=18).pack(
             side=tk.LEFT
@@ -916,7 +936,7 @@ class DeadReckoningGUI:
         self.target_height_entry.pack(side=tk.LEFT, padx=5)
 
         # Takeoff Time
-        takeoff_time_frame = tk.Frame(parent)
+        takeoff_time_frame = tk.Frame(left_col)
         takeoff_time_frame.pack(fill=tk.X, pady=2)
         tk.Label(takeoff_time_frame, text="Takeoff Time (s):", width=18).pack(
             side=tk.LEFT
@@ -928,7 +948,7 @@ class DeadReckoningGUI:
         self.takeoff_time_entry.pack(side=tk.LEFT, padx=5)
 
         # Hover Duration
-        hover_duration_frame = tk.Frame(parent)
+        hover_duration_frame = tk.Frame(left_col)
         hover_duration_frame.pack(fill=tk.X, pady=2)
         tk.Label(hover_duration_frame, text="Hover Duration (s):", width=18).pack(
             side=tk.LEFT
@@ -940,7 +960,7 @@ class DeadReckoningGUI:
         self.hover_duration_entry.pack(side=tk.LEFT, padx=5)
 
         # Landing Time
-        landing_time_frame = tk.Frame(parent)
+        landing_time_frame = tk.Frame(left_col)
         landing_time_frame.pack(fill=tk.X, pady=2)
         tk.Label(landing_time_frame, text="Landing Time (s):", width=18).pack(
             side=tk.LEFT
@@ -952,7 +972,7 @@ class DeadReckoningGUI:
         self.landing_time_entry.pack(side=tk.LEFT, padx=5)
 
         # Velocity Smoothing Alpha
-        vel_smooth_alpha_frame = tk.Frame(parent)
+        vel_smooth_alpha_frame = tk.Frame(left_col)
         vel_smooth_alpha_frame.pack(fill=tk.X, pady=2)
         tk.Label(vel_smooth_alpha_frame, text="Velocity Smoothing α:", width=18).pack(
             side=tk.LEFT
@@ -963,8 +983,9 @@ class DeadReckoningGUI:
         )
         self.vel_smooth_alpha_entry.pack(side=tk.LEFT, padx=5)
 
+        # Right column parameters
         # Max Correction
-        max_corr_frame = tk.Frame(parent)
+        max_corr_frame = tk.Frame(right_col)
         max_corr_frame.pack(fill=tk.X, pady=2)
         tk.Label(max_corr_frame, text="Max Correction:", width=18).pack(side=tk.LEFT)
         self.max_corr_var = tk.StringVar(value=str(MAX_CORRECTION))
@@ -973,7 +994,55 @@ class DeadReckoningGUI:
         )
         self.max_corr_entry.pack(side=tk.LEFT, padx=5)
 
-        # Apply button for runtime parameters
+        # Velocity Threshold
+        vel_thresh_frame = tk.Frame(right_col)
+        vel_thresh_frame.pack(fill=tk.X, pady=2)
+        tk.Label(vel_thresh_frame, text="Velocity Threshold (m/s):", width=18).pack(
+            side=tk.LEFT
+        )
+        self.vel_thresh_var = tk.StringVar(value=str(VELOCITY_THRESHOLD))
+        self.vel_thresh_entry = tk.Entry(
+            vel_thresh_frame, textvariable=self.vel_thresh_var, width=8
+        )
+        self.vel_thresh_entry.pack(side=tk.LEFT, padx=5)
+
+        # Drift Compensation Rate
+        drift_rate_frame = tk.Frame(right_col)
+        drift_rate_frame.pack(fill=tk.X, pady=2)
+        tk.Label(drift_rate_frame, text="Drift Compensation Rate:", width=18).pack(
+            side=tk.LEFT
+        )
+        self.drift_rate_var = tk.StringVar(value=str(DRIFT_COMPENSATION_RATE))
+        self.drift_rate_entry = tk.Entry(
+            drift_rate_frame, textvariable=self.drift_rate_var, width=8
+        )
+        self.drift_rate_entry.pack(side=tk.LEFT, padx=5)
+
+        # Reset Interval
+        reset_int_frame = tk.Frame(right_col)
+        reset_int_frame.pack(fill=tk.X, pady=2)
+        tk.Label(reset_int_frame, text="Reset Interval (s):", width=18).pack(
+            side=tk.LEFT
+        )
+        self.reset_int_var = tk.StringVar(value=str(PERIODIC_RESET_INTERVAL))
+        self.reset_int_entry = tk.Entry(
+            reset_int_frame, textvariable=self.reset_int_var, width=8
+        )
+        self.reset_int_entry.pack(side=tk.LEFT, padx=5)
+
+        # Max Position Error
+        max_pos_err_frame = tk.Frame(right_col)
+        max_pos_err_frame.pack(fill=tk.X, pady=2)
+        tk.Label(max_pos_err_frame, text="Max Position Error (m):", width=18).pack(
+            side=tk.LEFT
+        )
+        self.max_pos_err_var = tk.StringVar(value=str(MAX_POSITION_ERROR))
+        self.max_pos_err_entry = tk.Entry(
+            max_pos_err_frame, textvariable=self.max_pos_err_var, width=8
+        )
+        self.max_pos_err_entry.pack(side=tk.LEFT, padx=5)
+
+        # Apply button for runtime parameters (below both columns)
         apply_runtime_frame = tk.Frame(parent)
         apply_runtime_frame.pack(fill=tk.X, pady=5)
         self.apply_runtime_button = tk.Button(
@@ -1027,6 +1096,7 @@ class DeadReckoningGUI:
                         raise
 
                 self.blinking = True
+                self.low_battery_blinking = False
                 self.blink_button.config(text="Stop Blinking", bg="orange")
                 self.status_var.set("Status: LEDs blinking...")
             else:
@@ -1099,6 +1169,7 @@ class DeadReckoningGUI:
                     return
 
             self.blinking = False
+            self.low_battery_blinking = False
             self.blink_button.config(text="Blink LEDs", bg="yellow")
             self.status_var.set("Status: LEDs set to static mode")
         except Exception as e:
@@ -1143,6 +1214,7 @@ class DeadReckoningGUI:
                     return
 
             self.blinking = False
+            self.low_battery_blinking = False
             self.blink_button.config(text="Blink LEDs", bg="yellow")
 
             self.status_var.set("Status: LEDs set to color")
@@ -1188,11 +1260,71 @@ class DeadReckoningGUI:
             # Persist the cleared state as the last known color
             self.neo_last_color = (0, 0, 0)
             self.blinking = False
+            self.low_battery_blinking = False
             self.blink_button.config(text="Blink LEDs", bg="yellow")
             self.status_var.set("Status: LEDs cleared")
         except Exception as e:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel clear error: {e}")
+
+    def low_battery_blink_start(self):
+        """Start blinking red LEDs for low battery alert"""
+        if not self.blinking:
+            try:
+                cf = (
+                    getattr(scf_instance, "cf", None)
+                    if scf_instance is not None
+                    else None
+                )
+                if cf is not None:
+                    _try_send_with_retries(cf, np_set_all, 255, 0, 0)
+                    _try_send_with_retries(cf, np_start_blink, 500, 500)
+                else:
+                    tmp_cf = Crazyflie(rw_cache="./cache")
+                    try:
+                        with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
+                            tmp = getattr(scf, "cf", tmp_cf)
+                            time.sleep(NP_LINK_SETUP_DELAY)
+                            _try_send_with_retries(tmp, np_set_all, 255, 0, 0)
+                            _try_send_with_retries(tmp, np_start_blink, 500, 500)
+                    except Exception as e:
+                        print(f"Low battery blink start error: {e}")
+                        return
+                self.blinking = True
+                self.low_battery_blinking = True
+                self.status_var.set("Status: Low battery - LEDs blinking red")
+            except Exception as e:
+                self.status_var.set(f"Status: NeoPixel error - {str(e)}")
+                print(f"NeoPixel low battery blink error: {e}")
+
+    def low_battery_blink_stop(self):
+        """Stop low battery blinking and clear LEDs"""
+        if self.blinking and self.low_battery_blinking:
+            try:
+                cf = (
+                    getattr(scf_instance, "cf", None)
+                    if scf_instance is not None
+                    else None
+                )
+                if cf is not None:
+                    _try_send_with_retries(cf, np_stop_blink)
+                    _try_send_with_retries(cf, np_clear)
+                else:
+                    tmp_cf = Crazyflie(rw_cache="./cache")
+                    try:
+                        with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
+                            tmp = getattr(scf, "cf", tmp_cf)
+                            time.sleep(NP_LINK_SETUP_DELAY)
+                            _try_send_with_retries(tmp, np_stop_blink)
+                            _try_send_with_retries(tmp, np_clear)
+                    except Exception:
+                        pass
+                self.blinking = False
+                self.low_battery_blinking = False
+                self.status_var.set("Status: Battery OK - LEDs cleared")
+            except Exception as e:
+                self.status_var.set(f"Status: NeoPixel error - {str(e)}")
+                print(f"NeoPixel low battery stop error: {e}")
 
     def create_pid_controls(self, parent):
         """Create PID tuning input controls with TRIM controls - compact layout"""
@@ -1369,7 +1501,7 @@ class DeadReckoningGUI:
         self.ax1.legend()
 
         # 2D Position plot
-        self.ax2.set_title("Integrated Position (Dead Reckoning)", fontsize=12)
+        self.ax2.set_title("Integrated Position", fontsize=12)
         self.ax2.set_xlabel("X Position (m)")
         self.ax2.set_ylabel("Y Position (m)")
         self.ax2.set_aspect("equal")
@@ -1390,7 +1522,16 @@ class DeadReckoningGUI:
         self.ax2.legend()
 
         # Control corrections plot
-        self.ax3.set_title("Control Corrections", fontsize=12)
+        # self.ax3.set_title("Control Corrections", fontsize=12)
+        self.ax3.text(
+            0.5,
+            0.95,
+            "Control Corrections",
+            transform=self.ax3.transAxes,
+            ha="center",
+            va="top",
+            fontsize=12,
+        )
         self.ax3.set_ylabel("Correction")
         self.ax3.grid(True, alpha=0.3)
         (self.line_corr_vx,) = self.ax3.plot([], [], "g-", linewidth=2, label="Corr VX")
@@ -1398,7 +1539,16 @@ class DeadReckoningGUI:
         self.ax3.legend()
 
         # Height plot
-        self.ax4.set_title("Height", fontsize=12)
+        # self.ax4.set_title("Height", fontsize=12)
+        self.ax4.text(
+            0.5,
+            0.95,
+            "Height",
+            transform=self.ax4.transAxes,
+            ha="center",
+            va="top",
+            fontsize=12,
+        )
         self.ax4.set_xlabel("Time (s)")
         self.ax4.set_ylabel("Height (m)")
         self.ax4.grid(True, alpha=0.3)
@@ -1411,6 +1561,7 @@ class DeadReckoningGUI:
         self.ax4.legend()
 
         self.fig.tight_layout()
+        self.fig.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.05)
 
     def update_plots(self, frame):
         """Update all plots with new data"""
@@ -1442,6 +1593,13 @@ class DeadReckoningGUI:
         self.pos_y_var.set(f"Position Y: {integrated_position_y:.3f}m")
         self.corr_vx_var.set(f"Correction VX: {current_correction_vx:.3f}")
         self.corr_vy_var.set(f"Correction VY: {current_correction_vy:.3f}")
+
+        # Low battery alert
+        if current_battery_voltage > 0 and current_battery_voltage <= 3.3:
+            if not self.blinking:
+                self.low_battery_blink_start()
+        elif current_battery_voltage > 3.3 and self.low_battery_blinking:
+            self.low_battery_blink_stop()
 
         # Update plots
         try:
@@ -1540,6 +1698,7 @@ class DeadReckoningGUI:
     def apply_runtime_values(self):
         """Apply runtime adjustable values from GUI inputs"""
         global TARGET_HEIGHT, TAKEOFF_TIME, HOVER_DURATION, LANDING_TIME, VELOCITY_SMOOTHING_ALPHA, MAX_CORRECTION
+        global VELOCITY_THRESHOLD, DRIFT_COMPENSATION_RATE, PERIODIC_RESET_INTERVAL, MAX_POSITION_ERROR
         try:
             # Get values from GUI
             new_target_height = float(self.target_height_var.get())
@@ -1548,6 +1707,10 @@ class DeadReckoningGUI:
             new_landing_time = float(self.landing_time_var.get())
             new_vel_smooth_alpha = float(self.vel_smooth_alpha_var.get())
             new_max_corr = float(self.max_corr_var.get())
+            new_vel_thresh = float(self.vel_thresh_var.get())
+            new_drift_rate = float(self.drift_rate_var.get())
+            new_reset_int = float(self.reset_int_var.get())
+            new_max_pos_err = float(self.max_pos_err_var.get())
 
             # Validate values (optional, add checks as needed)
             if new_takeoff_time < 0 or new_hover_duration < 0 or new_landing_time < 0:
@@ -1556,6 +1719,14 @@ class DeadReckoningGUI:
                 raise ValueError("Smoothing alpha must be between 0 and 1.")
             if new_max_corr < 0:
                 raise ValueError("Max correction cannot be negative.")
+            if new_vel_thresh < 0:
+                raise ValueError("Velocity threshold cannot be negative.")
+            if new_drift_rate < 0:
+                raise ValueError("Drift compensation rate cannot be negative.")
+            if new_reset_int <= 0:
+                raise ValueError("Reset interval must be positive.")
+            if new_max_pos_err <= 0:
+                raise ValueError("Max position error must be positive.")
 
             # Apply values to global variables
             TARGET_HEIGHT = new_target_height
@@ -1564,6 +1735,10 @@ class DeadReckoningGUI:
             LANDING_TIME = new_landing_time
             VELOCITY_SMOOTHING_ALPHA = new_vel_smooth_alpha
             MAX_CORRECTION = new_max_corr
+            VELOCITY_THRESHOLD = new_vel_thresh
+            DRIFT_COMPENSATION_RATE = new_drift_rate
+            PERIODIC_RESET_INTERVAL = new_reset_int
+            MAX_POSITION_ERROR = new_max_pos_err
 
             print(f"Runtime Values Applied:")
             print(f"  Target Height: {TARGET_HEIGHT}")
@@ -1572,6 +1747,10 @@ class DeadReckoningGUI:
             print(f"  Landing Time: {LANDING_TIME}")
             print(f"  Velocity Smoothing Alpha: {VELOCITY_SMOOTHING_ALPHA}")
             print(f"  Max Correction: {MAX_CORRECTION}")
+            print(f"  Velocity Threshold: {VELOCITY_THRESHOLD}")
+            print(f"  Drift Compensation Rate: {DRIFT_COMPENSATION_RATE}")
+            print(f"  Reset Interval: {PERIODIC_RESET_INTERVAL}")
+            print(f"  Max Position Error: {MAX_POSITION_ERROR}")
 
         except ValueError as e:
             print(f"Error applying runtime values: {e}")
@@ -1665,12 +1844,28 @@ class DeadReckoningGUI:
         self.landing_time_var.set("0.5")
         self.vel_smooth_alpha_var.set("0.8")
         self.max_corr_var.set("0.1")
+        self.vel_thresh_var.set("0.005")
+        self.drift_rate_var.set("0.003")
+        self.reset_int_var.set("30.0")
+        self.max_pos_err_var.set("2.0")
         # Apply all values
         global TRIM_VX, TRIM_VY, OPTICAL_FLOW_SCALE, USE_HEIGHT_SCALING
+        global TARGET_HEIGHT, TAKEOFF_TIME, HOVER_DURATION, LANDING_TIME, VELOCITY_SMOOTHING_ALPHA, MAX_CORRECTION
+        global VELOCITY_THRESHOLD, DRIFT_COMPENSATION_RATE, PERIODIC_RESET_INTERVAL, MAX_POSITION_ERROR
         TRIM_VX = 0.1
         TRIM_VY = -0.02
         OPTICAL_FLOW_SCALE = 3.7
         USE_HEIGHT_SCALING = False
+        TARGET_HEIGHT = 0.2
+        TAKEOFF_TIME = 1.0
+        HOVER_DURATION = 30.0
+        LANDING_TIME = 0.5
+        VELOCITY_SMOOTHING_ALPHA = 0.8
+        MAX_CORRECTION = 0.1
+        VELOCITY_THRESHOLD = 0.005
+        DRIFT_COMPENSATION_RATE = 0.003
+        PERIODIC_RESET_INTERVAL = 30.0
+        MAX_POSITION_ERROR = 2.0
         print("All values reset to default")
 
     def clear_graphs(self):
@@ -1716,7 +1911,9 @@ class DeadReckoningGUI:
             not self.sensor_test_running and not self.flight_running
         ):  # Prevent starting if flight is active
             self.sensor_test_running = True
-            self.sensor_test_button.config(state=tk.DISABLED, text="Sensor Testing...")
+            self.sensor_test_button.config(
+                text="Stop Sensor Test", command=self.stop_sensor_test, bg="red"
+            )
             self.status_var.set("Status: Starting Sensor Test...")
             self.sensor_test_thread = threading.Thread(
                 target=self.sensor_test_controller_thread
@@ -1726,6 +1923,19 @@ class DeadReckoningGUI:
         elif self.flight_running:
             print("Cannot start Sensor Test while Flight is active.")
             self.status_var.set("Status: Flight Active - Cannot Test Sensors")
+
+    def stop_sensor_test(self):
+        """Stop the sensor test"""
+        if self.sensor_test_running:
+            global sensor_test_active
+            sensor_test_active = False
+            self.sensor_test_running = False
+            if self.sensor_test_thread and self.sensor_test_thread.is_alive():
+                self.sensor_test_thread.join(timeout=2.0)
+            self.status_var.set("Status: Sensor test stopped")
+            self.sensor_test_button.config(
+                text="Sensor Test", command=self.start_sensor_test, bg="lightblue"
+            )
 
     def sensor_test_controller_thread(self):  # New thread function for sensor test
         """Sensor test controller running in separate thread"""
@@ -1789,7 +1999,8 @@ class DeadReckoningGUI:
                 # Run sensor test loop (no motor commands)
                 flight_phase = "SENSOR_TEST"
                 start_time = time.time()
-                init_csv_logging()
+                if self.enable_sensor_logging_var.get():
+                    init_csv_logging()
                 while sensor_test_active:  # Continue while sensor test is active
                     # Calculate corrections (they will be 0 if PID params are 0, but still updates internal state)
                     if use_position_hold and sensor_data_ready:
@@ -1800,12 +2011,14 @@ class DeadReckoningGUI:
                         else:
                             flight_phase = "SENSOR_TEST"
                     time.sleep(CONTROL_UPDATE_RATE)  # Maintain control loop rate
-                    log_to_csv()
+                    if self.enable_sensor_logging_var.get():
+                        log_to_csv()
         except Exception as e:
             flight_phase = f"ERROR: {str(e)}"
         finally:
             # Stop logging
-            close_csv_logging()
+            if self.enable_sensor_logging_var.get():
+                close_csv_logging()
             if log_motion:
                 try:
                     log_motion.stop()
@@ -1827,7 +2040,9 @@ class DeadReckoningGUI:
             sensor_test_active = False
             flight_phase = "IDLE"
             self.sensor_test_running = False
-            self.sensor_test_button.config(state=tk.NORMAL, text="Sensor Test")
+            self.sensor_test_button.config(
+                text="Sensor Test", command=self.start_sensor_test, bg="lightblue"
+            )
             self.status_var.set("Status: Sensor Test Stopped")
 
     def start_flight(self):
@@ -1865,7 +2080,9 @@ class DeadReckoningGUI:
 
             # Proceed
             self.flight_running = True
-            self.start_button.config(state=tk.DISABLED)
+            self.start_button.config(
+                text="Stop Flight", command=self.emergency_stop, bg="red"
+            )
             self.status_var.set("Status: Starting Flight...")
             self.flight_thread = threading.Thread(target=self.flight_controller_thread)
             self.flight_thread.daemon = True
@@ -1881,10 +2098,12 @@ class DeadReckoningGUI:
         sensor_test_active = False  # Stop sensor test as well
         self.flight_running = False
         self.sensor_test_running = False  # Reset sensor test flag
-        self.start_button.config(state=tk.NORMAL)
+        self.start_button.config(
+            text="Start Flight", command=self.start_flight, bg="green"
+        )
         self.sensor_test_button.config(
-            state=tk.NORMAL, text="Sensor Test"
-        )  # Reset button text
+            text="Sensor Test", command=self.start_sensor_test, bg="lightblue"
+        )
         self.status_var.set("Status: Emergency Stopped")
 
     def flight_controller_thread(self):
@@ -2020,7 +2239,9 @@ class DeadReckoningGUI:
                     pass
             flight_active = False
             self.flight_running = False
-            self.start_button.config(state=tk.NORMAL)
+            self.start_button.config(
+                text="Start Flight", command=self.start_flight, bg="green"
+            )
             if flight_phase != "COMPLETE":
                 self.status_var.set(f"Status: {flight_phase}")
             else:
