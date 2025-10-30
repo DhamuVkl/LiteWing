@@ -24,37 +24,48 @@ NP_SEND_RETRIES = 3
 NP_PACKET_DELAY = 0.02
 NP_LINK_SETUP_DELAY = 0.12
 
-# Flight parameters
-DRONE_URI = "udp://192.168.43.42"
-TARGET_HEIGHT = 0.3
-TAKEOFF_TIME = 1.5
-HOVER_DURATION = 10.0
-LANDING_TIME = 1.0
-DEBUG_MODE = False
-VELOCITY_SMOOTHING_ALPHA = 0.9
-TRIM_VX = 0.0
-TRIM_VY = -0.4
 
-# PID parameters
+# === CONFIGURATION PARAMETERS ===
+DRONE_URI = "udp://192.168.43.42"
+TARGET_HEIGHT = 0.3  # Target hover height in meters
+TAKEOFF_TIME = 0.5  # Time to takeoff and stabilize
+HOVER_DURATION = 10.0  # How long to hover with position hold
+LANDING_TIME = 1.5  # Time to land
+# Debug mode - set to True to disable motors (sensors and logging still work)
+DEBUG_MODE = False
+# Filtering strength for velocity smoothing (0.0 = no smoothing, 1.0 = max smoothing)
+VELOCITY_SMOOTHING_ALPHA = 0.9  # Default: 0.7 (previously hardcoded)
+# Basic trim corrections
+TRIM_VX = 0.0  # Forward/backward trim correction
+TRIM_VY = -0.1  # Left/right trim correction
+
+# === DEAD RECKONING POSITION CONTROL PARAMETERS ===
+# PID Controller Parameters
+# Start here, then increase gradually
 POSITION_KP = 1.2
 POSITION_KI = 0.0
 POSITION_KD = 0.0
 VELOCITY_KP = 1.2
 VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
-MAX_CORRECTION = 0.095
-VELOCITY_THRESHOLD = 0.005
-DRIFT_COMPENSATION_RATE = 0.002
-PERIODIC_RESET_INTERVAL = 30.0
-MAX_POSITION_ERROR = 2.0
-
+# Control limits
+MAX_CORRECTION = 0.095  # Maximum control correction allowed
+VELOCITY_THRESHOLD = 0.005  # Consider drone "stationary" below this velocity
+DRIFT_COMPENSATION_RATE = 0.003  # Gentle pull toward zero when moving slowly
+# Position integration and reset
+PERIODIC_RESET_INTERVAL = 30.0  # Reset integrated position every 5 seconds
+MAX_POSITION_ERROR = 2.0  # Clamp position error to prevent runaway
 # Sensor parameters
-SENSOR_PERIOD_MS = 10
+SENSOR_PERIOD_MS = 10  # Motion sensor update rate
 DT = SENSOR_PERIOD_MS / 1000.0
-CONTROL_UPDATE_RATE = 0.02
-DEG_TO_RAD = 3.14159 / 180.0
-OPTICAL_FLOW_SCALE = 3.7
-USE_HEIGHT_SCALING = False
+CONTROL_UPDATE_RATE = 0.02  # 50Hz control loop
+# Velocity calculation constants
+DEG_TO_RAD = 3.1415926535 / 180.0
+# Optical flow scaling - adjust these to match your sensor/setup
+OPTICAL_FLOW_SCALE = (
+    3.7  # Empirical scaling factor (adjust based on real vs measured distance)
+)
+USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 
 # === GLOBAL VARIABLES ===
 # Sensor data
@@ -62,32 +73,26 @@ current_height = 0.0
 motion_delta_x = 0
 motion_delta_y = 0
 sensor_data_ready = False
-
-# Logging
+# Log file
 log_file = None
 log_writer = None
-
-# Battery data
+# Battery voltage data
 current_battery_voltage = 0.0
 battery_data_ready = False
-
 # Velocity tracking
 current_vx = 0.0
 current_vy = 0.0
 velocity_x_history = [0.0, 0.0]
 velocity_y_history = [0.0, 0.0]
-
-# Dead reckoning
+# Dead reckoning position integration
 integrated_position_x = 0.0
 integrated_position_y = 0.0
 last_integration_time = time.time()
 last_reset_time = time.time()
-
 # Control corrections
 current_correction_vx = 0.0
 current_correction_vy = 0.0
-
-# PID state
+# PID Controller state variables
 position_integral_x = 0.0
 position_integral_y = 0.0
 position_derivative_x = 0.0
@@ -100,15 +105,13 @@ velocity_derivative_x = 0.0
 velocity_derivative_y = 0.0
 last_velocity_error_x = 0.0
 last_velocity_error_y = 0.0
-
 # Flight state
 flight_phase = "IDLE"
 flight_active = False
-sensor_test_active = False
+sensor_test_active = False  # New variable for sensor test state
 scf_instance = None
 position_integration_enabled = False
-
-# Data history
+# Data history for plotting
 max_history_points = 200
 time_history = []
 velocity_x_history_plot = []
@@ -118,6 +121,7 @@ position_y_history = []
 correction_vx_history = []
 correction_vy_history = []
 height_history = []
+# Complete trajectory history (never trimmed)
 complete_trajectory_x = []
 complete_trajectory_y = []
 start_time = None
@@ -277,107 +281,6 @@ def _try_send_with_retries(cf, fn, *args, retries=NP_SEND_RETRIES):
             time.sleep(NP_PACKET_DELAY)
     print(f"[NeoPixel] Failed after {retries} attempts: {last_exc}")
     return False
-
-
-# === CONFIGURATION PARAMETERS ===
-DRONE_URI = "udp://192.168.43.42"
-TARGET_HEIGHT = 0.3  # Target hover height in meters
-TAKEOFF_TIME = 1.5  # Time to takeoff and stabilize
-HOVER_DURATION = 10.0  # How long to hover with position hold
-LANDING_TIME = 1  # Time to land
-# Debug mode - set to True to disable motors (sensors and logging still work)
-DEBUG_MODE = False
-# Filtering strength for velocity smoothing (0.0 = no smoothing, 1.0 = max smoothing)
-VELOCITY_SMOOTHING_ALPHA = 0.9  # Default: 0.7 (previously hardcoded)
-# Basic trim corrections
-TRIM_VX = 0.0  # Forward/backward trim correction
-TRIM_VY = -0.4  # Left/right trim correction
-# === DEAD RECKONING POSITION CONTROL PARAMETERS ===
-# PID Controller Parameters
-# Start here, then increase gradually
-POSITION_KP = 1.2
-POSITION_KI = 0.0
-POSITION_KD = 0.0
-VELOCITY_KP = 1.2
-VELOCITY_KI = 0.0
-VELOCITY_KD = 0.0
-# Control limits
-MAX_CORRECTION = 0.095  # Maximum control correction allowed
-VELOCITY_THRESHOLD = 0.005  # Consider drone "stationary" below this velocity
-DRIFT_COMPENSATION_RATE = 0.002  # Gentle pull toward zero when moving slowly
-# Position integration and reset
-PERIODIC_RESET_INTERVAL = 30.0  # Reset integrated position every 5 seconds
-MAX_POSITION_ERROR = 2.0  # Clamp position error to prevent runaway
-# Sensor parameters
-SENSOR_PERIOD_MS = 10  # Motion sensor update rate
-DT = SENSOR_PERIOD_MS / 1000.0
-CONTROL_UPDATE_RATE = 0.02  # 50Hz control loop
-# Velocity calculation constants
-DEG_TO_RAD = 3.14159 / 180.0
-# Optical flow scaling - adjust these to match your sensor/setup
-OPTICAL_FLOW_SCALE = (
-    3.7  # Empirical scaling factor (adjust based on real vs measured distance)
-)
-USE_HEIGHT_SCALING = False  # Set to False to disable height dependency
-# === GLOBAL VARIABLES ===
-# Sensor data
-current_height = 0.0
-motion_delta_x = 0
-motion_delta_y = 0
-sensor_data_ready = False
-# Log file
-log_file = None
-log_writer = None
-# Battery voltage data
-current_battery_voltage = 0.0
-battery_data_ready = False
-# Velocity tracking
-current_vx = 0.0
-current_vy = 0.0
-velocity_x_history = [0.0, 0.0]
-velocity_y_history = [0.0, 0.0]
-# Dead reckoning position integration
-integrated_position_x = 0.0
-integrated_position_y = 0.0
-last_integration_time = time.time()
-last_reset_time = time.time()
-# Control corrections
-current_correction_vx = 0.0
-current_correction_vy = 0.0
-# PID Controller state variables
-position_integral_x = 0.0
-position_integral_y = 0.0
-position_derivative_x = 0.0
-position_derivative_y = 0.0
-last_position_error_x = 0.0
-last_position_error_y = 0.0
-velocity_integral_x = 0.0
-velocity_integral_y = 0.0
-velocity_derivative_x = 0.0
-velocity_derivative_y = 0.0
-last_velocity_error_x = 0.0
-last_velocity_error_y = 0.0
-# Flight state
-flight_phase = "IDLE"
-flight_active = False
-sensor_test_active = False  # New variable for sensor test state
-scf_instance = None
-position_integration_enabled = False
-# Data history for plotting
-max_history_points = 200
-time_history = []
-velocity_x_history_plot = []
-velocity_y_history_plot = []
-position_x_history = []
-position_y_history = []
-correction_vx_history = []
-correction_vy_history = []
-height_history = []
-# Complete trajectory history (never trimmed)
-complete_trajectory_x = []
-complete_trajectory_y = []
-start_time = None
-neo_controller = None
 
 
 def calculate_velocity(delta_value, altitude):
@@ -2031,6 +1934,7 @@ class DeadReckoningGUI:
                         cf.commander.send_hover_setpoint(
                             TRIM_VX, TRIM_VY, 0, TARGET_HEIGHT
                         )  # Use global TARGET_HEIGHT
+                    log_to_csv()
                     time.sleep(0.01)
 
                 # Reset position tracking and enable integration for hover
@@ -2091,6 +1995,7 @@ class DeadReckoningGUI:
                 ):  # Use global LANDING_TIME
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(TRIM_VX, TRIM_VY, 0, 0)
+                    log_to_csv()
                     time.sleep(0.01)
 
                 # Stop motors
