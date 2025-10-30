@@ -75,6 +75,7 @@
 #include "static_mem.h"
 // #include "peer_localization.h"
 #include "cfassert.h"
+#include "esp_wifi.h"
 
 #ifndef START_DISARMED
 #define ARM_INIT true
@@ -88,6 +89,7 @@ static bool canFly;
 static bool armed = ARM_INIT;
 static bool forceArm;
 static bool isInit;
+static bool green_blinking = false;
 
 STATIC_MEM_TASK_ALLOC(systemTask, SYSTEM_TASK_STACKSIZE);
 
@@ -97,6 +99,7 @@ static StaticSemaphore_t canStartMutexBuffer;
 
 /* Private functions */
 static void systemTask(void *arg);
+static void ledMonitorTask(void *arg);
 
 /* Public functions */
 void systemLaunch(void)
@@ -168,6 +171,41 @@ bool systemTest()
 }
 
 /* Private functions implementation */
+
+static void ledMonitorTask(void *arg)
+{
+  while (1)
+  {
+    if (crtpIsConnected())
+    {
+      neopixelClear();
+    }
+    else
+    {
+      wifi_sta_list_t sta_list;
+      esp_wifi_ap_get_sta_list(&sta_list);
+      if (sta_list.num > 0)
+      {
+        if (!green_blinking)
+        {
+          neopixelSetAllColor(0, 255, 0);
+          neopixelStartBlink(500, 500);
+          green_blinking = true;
+        }
+      }
+      else
+      {
+        if (green_blinking)
+        {
+          neopixelStopBlink();
+          green_blinking = false;
+        }
+        neopixelSetAllColor(0, 0, 255);
+      }
+    }
+    vTaskDelay(M2T(100));
+  }
+}
 
 void systemTask(void *arg)
 {
@@ -246,20 +284,32 @@ void systemTask(void *arg)
     ledseqRun(&seq_testPassed);
     // /* Initialize NeoPixel on GPIO20 with 4 LEDs and start blinking immediately */
     neopixelInit(20, 4);
-    neopixelSetPixelColor(0, 0, 255, 0);
-    neopixelSetPixelColor(1, 0, 255, 0);
-    neopixelSetPixelColor(2, 0, 0, 255);
-    neopixelSetPixelColor(3, 0, 0, 255);
-    neopixelShow();
-    neopixelStartBlink(500, 50);
+    // neopixelSetPixelColor(0, 0, 255, 0);
+    // neopixelSetPixelColor(1, 0, 255, 0);
+    // neopixelSetPixelColor(2, 0, 0, 255);
+    // neopixelSetPixelColor(3, 0, 0, 255);
+    // neopixelShow();
+    // neopixelStartBlink(500, 50);
     /* Keep blinking until a CRTP client (laptop/mobile) is connected. Poll
        crtpIsConnected() and sleep briefly between checks to avoid busy-looping. */
+    neopixelSetAllColor(0, 0, 255); // Set all LEDs to blue
     while (!crtpIsConnected())
     {
+      wifi_sta_list_t sta_list;
+      esp_wifi_ap_get_sta_list(&sta_list);
+      if (sta_list.num > 0 && !green_blinking)
+      {
+        neopixelSetAllColor(0, 255, 0); // Set all LEDs to green
+        neopixelStartBlink(500, 500);
+        green_blinking = true;
+      }
       vTaskDelay(M2T(100));
     }
     /* Stop blinking when connected and keep LEDs in their last shown state. */
-    neopixelStopBlink();
+    // neopixelStopBlink();
+    // neopixelClear();
+    // Start LED monitoring task
+    xTaskCreate(ledMonitorTask, "LED Monitor", 2048, NULL, 5, NULL);
   }
   else
   {
