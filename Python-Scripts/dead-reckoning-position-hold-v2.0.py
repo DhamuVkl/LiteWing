@@ -100,6 +100,7 @@ NEOPIXEL_CHANNEL_SET_PIXEL = 0x00
 NEOPIXEL_CHANNEL_SHOW = 0x01
 NEOPIXEL_CHANNEL_CLEAR = 0x02
 NEOPIXEL_CHANNEL_BLINK = 0x03
+# Note: SET_ALL is implemented by sending SET_PIXEL with index 0xFF (broadcast)
 
 # NeoPixel send tuning
 NP_SEND_RETRIES = 3
@@ -131,6 +132,19 @@ def np_start_blink(cf, on_ms=500, off_ms=500):
 def np_stop_blink(cf):
     data = bytes([0, 0, 0, 0, 0])
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_BLINK, data)
+
+
+def np_set_all(cf, r, g, b):
+    """Set all NeoPixels to same RGB using SET_ALL CRTP channel."""
+    # The firmware uses the special broadcast index 0xFF on the SET_PIXEL
+    # channel to indicate "set all". That avoids adding a channel value
+    # beyond the 2-bit channel field in the CRTP packet.
+    _send_crtp_with_fallback(
+        cf,
+        CRTP_PORT_NEOPIXEL,
+        NEOPIXEL_CHANNEL_SET_PIXEL,
+        bytes([0xFF, r & 0xFF, g & 0xFF, b & 0xFF]),
+    )
 
 
 def _try_send_with_retries(cf, fn, *args, retries=NP_SEND_RETRIES):
@@ -658,6 +672,16 @@ class DeadReckoningGUI:
         self.neo_cf = None
         self._neo_owns_link = False
         self.blinking = False
+        # Persistent last color for NeoPixels. This is used so blinking and
+        # static color are independent and stopping blink does not lose the
+        # previously-set color. Initialize from the UI defaults.
+        try:
+            r = int(self.rgb_r_var.get())
+            g = int(self.rgb_g_var.get())
+            b = int(self.rgb_b_var.get())
+        except Exception:
+            r, g, b = 255, 255, 255
+        self.neo_last_color = (r, g, b)
 
         # Start animation
         self.anim = animation.FuncAnimation(
@@ -680,8 +704,7 @@ class DeadReckoningGUI:
             font=("Arial", 12),
         )
         self.start_button.pack(side=tk.LEFT, padx=10)
-
-        # Sensor Test button - New button
+        # Sensor Test button - starts a separate sensor test thread (non-flight)
         self.sensor_test_button = tk.Button(
             control_frame,
             text="Sensor Test",
@@ -691,6 +714,7 @@ class DeadReckoningGUI:
             font=("Arial", 12),
         )
         self.sensor_test_button.pack(side=tk.LEFT, padx=10)
+
         # Blink NeoPixel button - New button
         self.blink_button = tk.Button(
             control_frame,
@@ -964,24 +988,38 @@ class DeadReckoningGUI:
         # Use inline np_* helpers; reuse existing SyncCrazyflie when present
         try:
             if not self.blinking:
-                # Start blinking: prefer reusing global scf_instance.cf
-                cf = None
-                if scf_instance is not None:
-                    cf = getattr(scf_instance, "cf", None)
+                # Start blinking: update stored color from UI, set it, then start blink.
+                try:
+                    r = int(self.rgb_r_var.get())
+                    g = int(self.rgb_g_var.get())
+                    b = int(self.rgb_b_var.get())
+                except Exception:
+                    r, g, b = self.neo_last_color
 
+                # Clamp and store
+                r = max(0, min(255, r))
+                g = max(0, min(255, g))
+                b = max(0, min(255, b))
+                self.neo_last_color = (r, g, b)
+
+                cf = (
+                    getattr(scf_instance, "cf", None)
+                    if scf_instance is not None
+                    else None
+                )
                 if cf is not None:
-                    # Note: We now use np_start_blink without setting white first.
-                    # This preserves whatever color was last set when blinking starts.
+                    _try_send_with_retries(cf, np_set_all, r, g, b)
                     _try_send_with_retries(cf, np_start_blink, 500, 500)
                 else:
-                    # Open a temporary link just to send the start command
                     tmp_cf = Crazyflie(rw_cache="./cache")
                     try:
                         with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
                             tmp = getattr(scf, "cf", tmp_cf)
                             time.sleep(NP_LINK_SETUP_DELAY)
+                            _try_send_with_retries(tmp, np_set_all, r, g, b)
                             _try_send_with_retries(tmp, np_start_blink, 500, 500)
                     except Exception as e:
+                        print(f"NeoPixel blink start error: {e}")
                         raise
 
                 self.blinking = True
@@ -989,13 +1027,17 @@ class DeadReckoningGUI:
                 self.status_var.set("Status: LEDs blinking...")
             else:
                 # Stop blinking
-                cf = None
-                if scf_instance is not None:
-                    cf = getattr(scf_instance, "cf", None)
+                cf = (
+                    getattr(scf_instance, "cf", None)
+                    if scf_instance is not None
+                    else None
+                )
 
+                # Stop blinking but restore last color (do not clear stored RGB)
                 if cf is not None:
                     _try_send_with_retries(cf, np_stop_blink)
-                    _try_send_with_retries(cf, np_clear)
+                    # Restore last color so stop is non-destructive
+                    _try_send_with_retries(cf, np_set_all, *self.neo_last_color)
                 else:
                     tmp_cf = Crazyflie(rw_cache="./cache")
                     try:
@@ -1003,13 +1045,15 @@ class DeadReckoningGUI:
                             tmp = getattr(scf, "cf", tmp_cf)
                             time.sleep(NP_LINK_SETUP_DELAY)
                             _try_send_with_retries(tmp, np_stop_blink)
-                            _try_send_with_retries(tmp, np_clear)
+                            _try_send_with_retries(
+                                tmp, np_set_all, *self.neo_last_color
+                            )
                     except Exception:
                         pass
 
                 self.blinking = False
                 self.blink_button.config(text="Blink LEDs", bg="yellow")
-                self.status_var.set("Status: LEDs off")
+                self.status_var.set("Status: LEDs stopped (color preserved)")
         except Exception as e:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel error: {e}")
@@ -1017,29 +1061,42 @@ class DeadReckoningGUI:
     def set_static_mode(self):
         """Make the current LED color static (stop blinking but keep color)."""
         try:
-            if self.blinking:
-                # reuse existing link or temporary
-                cf = (
-                    getattr(scf_instance, "cf", None)
-                    if scf_instance is not None
-                    else None
-                )
-                if cf is not None:
-                    _try_send_with_retries(cf, np_stop_blink)
-                else:
-                    tmp_cf = Crazyflie(rw_cache="./cache")
-                    try:
-                        with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
-                            tmp = getattr(scf, "cf", tmp_cf)
-                            time.sleep(NP_LINK_SETUP_DELAY)
-                            _try_send_with_retries(tmp, np_stop_blink)
-                    except Exception as e:
-                        print(f"NeoPixel error setting static: {e}")
-                        return
+            # Always set static color (independent of whether blinking was active).
+            try:
+                r = int(self.rgb_r_var.get())
+                g = int(self.rgb_g_var.get())
+                b = int(self.rgb_b_var.get())
+            except Exception:
+                r, g, b = self.neo_last_color
 
-                self.blinking = False
-                self.blink_button.config(text="Blink LEDs", bg="yellow")
-                self.status_var.set("Status: LEDs set to static mode")
+            # Clamp and store the color so future blink/stop operations reuse it
+            r = max(0, min(255, r))
+            g = max(0, min(255, g))
+            b = max(0, min(255, b))
+            self.neo_last_color = (r, g, b)
+
+            cf = getattr(scf_instance, "cf", None) if scf_instance is not None else None
+            if cf is not None:
+                # Stop blink if active and set color
+                if self.blinking:
+                    _try_send_with_retries(cf, np_stop_blink)
+                _try_send_with_retries(cf, np_set_all, r, g, b)
+            else:
+                tmp_cf = Crazyflie(rw_cache="./cache")
+                try:
+                    with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
+                        tmp = getattr(scf, "cf", tmp_cf)
+                        time.sleep(NP_LINK_SETUP_DELAY)
+                        if self.blinking:
+                            _try_send_with_retries(tmp, np_stop_blink)
+                        _try_send_with_retries(tmp, np_set_all, r, g, b)
+                except Exception as e:
+                    print(f"NeoPixel error setting static: {e}")
+                    return
+
+            self.blinking = False
+            self.blink_button.config(text="Blink LEDs", bg="yellow")
+            self.status_var.set("Status: LEDs set to static mode")
         except Exception as e:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel error: {e}")
@@ -1047,32 +1104,24 @@ class DeadReckoningGUI:
     def set_leds_color(self, r, g, b):
         """Set a stable color on the NeoPixels (stops blinking first)."""
         try:
-            # If currently blinking, stop it first
-            if self.blinking:
-                # reuse existing link or temporary
-                cf = (
-                    getattr(scf_instance, "cf", None)
-                    if scf_instance is not None
-                    else None
-                )
-                if cf is not None:
-                    np_stop_blink(cf)
-                else:
-                    tmp_cf = Crazyflie(rw_cache="./cache")
-                    try:
-                        with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
-                            tmp = getattr(scf, "cf", tmp_cf)
-                            np_stop_blink(tmp)
-                    except Exception:
-                        pass
-                self.blinking = False
-                self.blink_button.config(text="Blink LEDs", bg="yellow")
+            # Update stored color so future actions reuse it
+            try:
+                r = int(r)
+                g = int(g)
+                b = int(b)
+            except Exception:
+                pass
+            r = max(0, min(255, r))
+            g = max(0, min(255, g))
+            b = max(0, min(255, b))
+            self.neo_last_color = (r, g, b)
 
+            # If currently blinking, stop it first; then set the color (use set_all)
             cf = getattr(scf_instance, "cf", None) if scf_instance is not None else None
             if cf is not None:
-                for i in range(4):
-                    _try_send_with_retries(cf, np_set_pixel, i, r, g, b)
-                    time.sleep(NP_PACKET_DELAY)
+                if self.blinking:
+                    _try_send_with_retries(cf, np_stop_blink)
+                _try_send_with_retries(cf, np_set_all, r, g, b)
                 _try_send_with_retries(cf, np_show)
             else:
                 tmp_cf = Crazyflie(rw_cache="./cache")
@@ -1080,14 +1129,17 @@ class DeadReckoningGUI:
                     with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
                         tmp = getattr(scf, "cf", tmp_cf)
                         time.sleep(NP_LINK_SETUP_DELAY)
-                        for i in range(4):
-                            _try_send_with_retries(tmp, np_set_pixel, i, r, g, b)
-                            time.sleep(NP_PACKET_DELAY)
+                        if self.blinking:
+                            _try_send_with_retries(tmp, np_stop_blink)
+                        _try_send_with_retries(tmp, np_set_all, r, g, b)
                         _try_send_with_retries(tmp, np_show)
                 except Exception as e:
                     self.status_var.set(f"Status: NeoPixel error - {str(e)}")
                     print(f"NeoPixel error: {e}")
                     return
+
+            self.blinking = False
+            self.blink_button.config(text="Blink LEDs", bg="yellow")
 
             self.status_var.set("Status: LEDs set to color")
         except Exception as e:
@@ -1129,6 +1181,8 @@ class DeadReckoningGUI:
                 except Exception:
                     pass
 
+            # Persist the cleared state as the last known color
+            self.neo_last_color = (0, 0, 0)
             self.blinking = False
             self.blink_button.config(text="Blink LEDs", bg="yellow")
             self.status_var.set("Status: LEDs cleared")
