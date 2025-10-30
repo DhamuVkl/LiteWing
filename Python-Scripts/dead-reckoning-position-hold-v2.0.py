@@ -721,6 +721,7 @@ class DeadReckoningGUI:
             text="Blink LEDs",
             command=self.toggle_blink,
             bg="yellow",
+            state=tk.DISABLED,
             fg="black",
             font=("Arial", 12),
         )
@@ -732,6 +733,7 @@ class DeadReckoningGUI:
             text="Set Static",
             command=self.set_static_mode,
             bg="lightgrey",
+            state=tk.DISABLED,
             fg="black",
             font=("Arial", 11),
         )
@@ -742,6 +744,7 @@ class DeadReckoningGUI:
             text="Clear LEDs",
             command=self.clear_leds,
             bg="lightgrey",
+            state=tk.DISABLED,
             fg="black",
             font=("Arial", 11),
         )
@@ -774,6 +777,7 @@ class DeadReckoningGUI:
             text="Set Color",
             command=self.set_color_from_ui,
             bg="lightgrey",
+            state=tk.DISABLED,
             fg="black",
             font=("Arial", 11),
         )
@@ -1740,6 +1744,14 @@ class DeadReckoningGUI:
         try:
             with SyncCrazyflie(DRONE_URI, cf=cf) as scf:
                 scf_instance = scf
+                # Enable NeoPixel controls now that a Crazyflie link is established
+                try:
+                    self.blink_button.config(state=tk.NORMAL)
+                    self.set_static_button.config(state=tk.NORMAL)
+                    self.clear_leds_button.config(state=tk.NORMAL)
+                    self.set_color_button.config(state=tk.NORMAL)
+                except Exception:
+                    pass
                 # Setup logging (same as flight)
                 log_motion, log_battery = setup_logging(cf)
                 use_position_hold = log_motion is not None
@@ -1804,6 +1816,14 @@ class DeadReckoningGUI:
                     log_battery.stop()
                 except:
                     pass
+            # Disable NeoPixel controls when sensor test stops
+            try:
+                self.blink_button.config(state=tk.DISABLED)
+                self.set_static_button.config(state=tk.DISABLED)
+                self.clear_leds_button.config(state=tk.DISABLED)
+                self.set_color_button.config(state=tk.DISABLED)
+            except Exception:
+                pass
             sensor_test_active = False
             flight_phase = "IDLE"
             self.sensor_test_running = False
