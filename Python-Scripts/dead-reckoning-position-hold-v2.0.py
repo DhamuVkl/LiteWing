@@ -63,7 +63,7 @@ CONTROL_UPDATE_RATE = 0.02  # 50Hz control loop
 DEG_TO_RAD = 3.1415926535 / 180.0
 # Optical flow scaling - adjust these to match your sensor/setup
 OPTICAL_FLOW_SCALE = (
-    3.7  # Empirical scaling factor (adjust based on real vs measured distance)
+    4.4  # Empirical scaling factor (adjust based on real vs measured distance)
 )
 USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 
@@ -289,7 +289,7 @@ def calculate_velocity(delta_value, altitude):
         return 0.0
     if USE_HEIGHT_SCALING:
         # Original height-dependent calculation
-        velocity_constant = (4.2 * DEG_TO_RAD) / (30.0 * DT)
+        velocity_constant = (5.4 * DEG_TO_RAD) / (30.0 * DT)
         velocity = delta_value * altitude * velocity_constant
     else:
         # Simplified calculation without height dependency
