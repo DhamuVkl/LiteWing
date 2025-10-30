@@ -812,6 +812,16 @@ class DeadReckoningGUI:
         )
         self.sensor_test_button.pack(side=tk.LEFT, padx=10)
 
+        self.stop_button = tk.Button(
+            control_frame,
+            text="Emergency Stop",
+            command=self.emergency_stop,
+            bg="red",
+            fg="white",
+            font=("Arial", 12),
+        )
+        self.stop_button.pack(side=tk.LEFT, padx=10)
+
         # Blink NeoPixel button - New button
         self.blink_button = tk.Button(
             control_frame,
@@ -879,16 +889,6 @@ class DeadReckoningGUI:
             font=("Arial", 11),
         )
         self.set_color_button.pack(side=tk.LEFT, padx=6)
-
-        self.stop_button = tk.Button(
-            control_frame,
-            text="Emergency Stop",
-            command=self.emergency_stop,
-            bg="red",
-            fg="white",
-            font=("Arial", 12),
-        )
-        self.stop_button.pack(side=tk.LEFT, padx=10)
 
         # Flight status
         self.status_var = tk.StringVar(value="Status: Ready")
