@@ -30,7 +30,7 @@ DRONE_URI = "udp://192.168.43.42"
 TARGET_HEIGHT = 0.3  # Target hover height in meters
 TAKEOFF_TIME = 0.5  # Time to takeoff and stabilize
 HOVER_DURATION = 10.0  # How long to hover with position hold
-LANDING_TIME = 1.5  # Time to land
+LANDING_TIME = 0.5  # Time to land
 # Debug mode - set to True to disable motors (sensors and logging still work)
 DEBUG_MODE = False
 # Filtering strength for velocity smoothing (0.0 = no smoothing, 1.0 = max smoothing)
@@ -49,11 +49,11 @@ VELOCITY_KP = 1.2
 VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
 # Control limits
-MAX_CORRECTION = 0.095  # Maximum control correction allowed
+MAX_CORRECTION = 0.1  # Maximum control correction allowed
 VELOCITY_THRESHOLD = 0.005  # Consider drone "stationary" below this velocity
-DRIFT_COMPENSATION_RATE = 0.003  # Gentle pull toward zero when moving slowly
+DRIFT_COMPENSATION_RATE = 0.004  # Gentle pull toward zero when moving slowly
 # Position integration and reset
-PERIODIC_RESET_INTERVAL = 30.0  # Reset integrated position every 5 seconds
+PERIODIC_RESET_INTERVAL = 90.0  # Reset integrated position every 5 seconds
 MAX_POSITION_ERROR = 2.0  # Clamp position error to prevent runaway
 # Sensor parameters
 SENSOR_PERIOD_MS = 10  # Motion sensor update rate
@@ -68,7 +68,7 @@ OPTICAL_FLOW_SCALE = (
 USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 
 # === MANEUVER PARAMETERS ===
-MANEUVER_DISTANCE = 0.1  # 10cm default maneuver distance
+MANEUVER_DISTANCE = 0.6  # 10cm default maneuver distance
 MANEUVER_THRESHOLD = 0.02  # Consider maneuver complete when within 2cm of target
 
 # === GLOBAL VARIABLES ===
@@ -902,25 +902,8 @@ class DeadReckoningGUI:
         )
         self.forward_button.grid(row=0, column=1, padx=5, pady=5)
 
-        # Left button (middle left)
+        # Left button (middle left) - swapped to Right command
         self.left_button = tk.Button(
-            joystick_frame,
-            text="←\nLeft",
-            command=self.maneuver_left,
-            bg="blue",
-            fg="white",
-            font=("Arial", 10),
-            width=8,
-            height=2,
-        )
-        self.left_button.grid(row=1, column=0, padx=5, pady=5)
-
-        # Center placeholder (empty)
-        center_label = tk.Label(joystick_frame, text="○", font=("Arial", 16), fg="gray")
-        center_label.grid(row=1, column=1)
-
-        # Right button (middle right)
-        self.right_button = tk.Button(
             joystick_frame,
             text="→\nRight",
             command=self.maneuver_right,
@@ -930,7 +913,33 @@ class DeadReckoningGUI:
             width=8,
             height=2,
         )
-        self.right_button.grid(row=1, column=2, padx=5, pady=5)
+        self.left_button.grid(row=1, column=2, padx=5, pady=5)
+
+        # Stop button (center)
+        self.stop_button = tk.Button(
+            joystick_frame,
+            text="STOP",
+            command=self.stop_maneuver,
+            bg="red",
+            fg="white",
+            font=("Arial", 12, "bold"),
+            width=8,
+            height=2,
+        )
+        self.stop_button.grid(row=1, column=1, padx=5, pady=5)
+
+        # Right button (middle right) - swapped to Left command
+        self.right_button = tk.Button(
+            joystick_frame,
+            text="←\nLeft",
+            command=self.maneuver_left,
+            bg="blue",
+            fg="white",
+            font=("Arial", 10),
+            width=8,
+            height=2,
+        )
+        self.right_button.grid(row=1, column=0, padx=5, pady=5)
 
         # Backward button (bottom center)
         self.backward_button = tk.Button(
@@ -965,7 +974,7 @@ class DeadReckoningGUI:
         """Execute left maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            self.start_maneuver(-distance, 0.0)
+            self.start_maneuver(distance, 0.0)
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -973,9 +982,18 @@ class DeadReckoningGUI:
         """Execute right maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            self.start_maneuver(distance, 0.0)
+            self.start_maneuver(-distance, 0.0)
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
+
+    def stop_maneuver(self):
+        """Stop the current maneuver and flight"""
+        global maneuver_active, target_position_x, target_position_y, flight_active
+        maneuver_active = False
+        flight_active = False
+        target_position_x = integrated_position_x
+        target_position_y = integrated_position_y
+        print("Maneuver and flight stopped")
 
     def start_maneuver(self, delta_x, delta_y):
         """Start a maneuver flight"""
