@@ -11,6 +11,7 @@ from matplotlib.figure import Figure
 import matplotlib.animation as animation
 import numpy as np
 import csv
+import math
 from datetime import datetime
 
 # === CONSTANTS ===
@@ -119,6 +120,10 @@ position_integration_enabled = False
 maneuver_active = False
 target_position_x = 0.0
 target_position_y = 0.0
+# Shape maneuver state
+shape_active = False
+shape_waypoints = []
+shape_index = 0
 # Data history for plotting
 max_history_points = 200
 time_history = []
@@ -954,6 +959,29 @@ class DeadReckoningGUI:
         )
         self.backward_button.grid(row=2, column=1, padx=5, pady=5)
 
+        # Shape maneuver buttons
+        shape_frame = tk.Frame(parent)
+        shape_frame.pack(pady=10)
+        tk.Label(shape_frame, text="Shape Maneuvers:").pack()
+        self.square_button = tk.Button(
+            shape_frame,
+            text="Square",
+            command=self.maneuver_square,
+            bg="purple",
+            fg="white",
+            font=("Arial", 10),
+        )
+        self.square_button.pack(side=tk.LEFT, padx=5)
+        self.circle_button = tk.Button(
+            shape_frame,
+            text="Circle",
+            command=self.maneuver_circle,
+            bg="purple",
+            fg="white",
+            font=("Arial", 10),
+        )
+        self.circle_button.pack(side=tk.LEFT, padx=5)
+
     def maneuver_forward(self):
         """Execute forward maneuver"""
         try:
@@ -994,6 +1022,98 @@ class DeadReckoningGUI:
         target_position_x = integrated_position_x
         target_position_y = integrated_position_y
         print("Maneuver and flight stopped")
+
+    def maneuver_square(self):
+        """Execute square maneuver"""
+        try:
+            distance = float(self.maneuver_distance_var.get())
+            waypoints = self.calculate_square_waypoints(distance)
+            self.start_shape_maneuver(waypoints)
+        except ValueError:
+            self.status_var.set("Status: Invalid maneuver distance")
+
+    def maneuver_circle(self):
+        """Execute circle maneuver"""
+        try:
+            radius = float(self.maneuver_distance_var.get())
+            waypoints = self.calculate_circle_waypoints(radius)
+            self.start_shape_maneuver(waypoints)
+        except ValueError:
+            self.status_var.set("Status: Invalid maneuver distance")
+
+    def calculate_square_waypoints(self, distance):
+        """Calculate waypoints for square pattern"""
+        x = integrated_position_x
+        y = integrated_position_y
+        return [
+            (x + distance, y),
+            (x + distance, y + distance),
+            (x, y + distance),
+            (x, y),
+        ]
+
+    def calculate_circle_waypoints(self, radius):
+        """Calculate waypoints for circle pattern"""
+        x = integrated_position_x
+        y = integrated_position_y
+        waypoints = []
+        num_points = 12  # Smooth circle approximation
+        for i in range(num_points):
+            angle = 2 * math.pi * i / num_points
+            waypoints.append(
+                (x + radius * math.cos(angle), y + radius * math.sin(angle))
+            )
+        return waypoints
+
+    def start_shape_maneuver(self, waypoints):
+        """Start a shape maneuver with waypoints"""
+        global shape_waypoints, shape_index, shape_active, maneuver_active, target_position_x, target_position_y
+        if not self.flight_running and not self.sensor_test_running:
+            # Battery safety check
+            if current_battery_voltage > 0 and current_battery_voltage < 3.4:
+                self.status_var.set(
+                    f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start maneuver."
+                )
+                return
+            elif current_battery_voltage == 0.0:
+                print("WARNING: Battery voltage unknown")
+
+            # SENSOR SAFETY CHECK
+            if not sensor_data_ready:
+                self.status_var.set(
+                    "Status: Sensor data not ready! Wait for height & motion readings."
+                )
+                return
+
+            if current_height <= 0.0:
+                self.status_var.set(
+                    "Status: Invalid height reading! Ensure drone is powered and sensors active."
+                )
+                return
+
+            # Set shape maneuver parameters
+            shape_waypoints = waypoints
+            shape_index = 0
+            shape_active = True
+            maneuver_active = True
+            target_position_x, target_position_y = shape_waypoints[0]
+
+            # Proceed
+            self.flight_running = True
+            self.start_button.config(
+                text="Stop Flight", command=self.emergency_stop, bg="red"
+            )
+            self.status_var.set(
+                f"Status: Starting Shape Maneuver ({len(waypoints)} points)..."
+            )
+            self.flight_thread = threading.Thread(target=self.flight_controller_thread)
+            self.flight_thread.daemon = True
+            self.flight_thread.start()
+        elif self.sensor_test_running:
+            print("Cannot start Shape Maneuver while Sensor Test is active.")
+            self.status_var.set(
+                "Status: Sensor Test Active - Cannot Start Shape Maneuver"
+            )
 
     def start_maneuver(self, delta_x, delta_y):
         """Start a maneuver flight"""
@@ -2304,6 +2424,8 @@ class DeadReckoningGUI:
         """Flight controller running in separate thread"""
         global flight_phase, flight_active, scf_instance
         global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time
+        global maneuver_active, target_position_x, target_position_y
+        global shape_active, shape_waypoints, shape_index
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
@@ -2387,8 +2509,22 @@ class DeadReckoningGUI:
                                 + (integrated_position_y - target_position_y) ** 2
                             ) ** 0.5
                             if distance_to_target < MANEUVER_THRESHOLD:
-                                flight_phase = "MANEUVER_COMPLETE"
-                                break
+                                if shape_active:
+                                    shape_index += 1
+                                    if shape_index < len(shape_waypoints):
+                                        target_position_x, target_position_y = (
+                                            shape_waypoints[shape_index]
+                                        )
+                                        flight_phase = f"MANEUVER {shape_index+1}/{len(shape_waypoints)}"
+                                    else:
+                                        shape_active = False
+                                        maneuver_active = False
+                                        flight_phase = "MANEUVER_COMPLETE"
+                                        break
+                                else:
+                                    flight_phase = "MANEUVER_COMPLETE"
+                                    maneuver_active = False
+                                    break
                         else:
                             motion_vx, motion_vy = 0.0, 0.0
                         log_to_csv()
