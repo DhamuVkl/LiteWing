@@ -284,15 +284,11 @@ void systemTask(void *arg)
     ledseqRun(&seq_testPassed);
     // /* Initialize NeoPixel on GPIO20 with 4 LEDs and start blinking immediately */
     neopixelInit(20, 4);
-    // neopixelSetPixelColor(0, 0, 255, 0);
-    // neopixelSetPixelColor(1, 0, 255, 0);
-    // neopixelSetPixelColor(2, 0, 0, 255);
-    // neopixelSetPixelColor(3, 0, 0, 255);
-    // neopixelShow();
-    // neopixelStartBlink(500, 50);
+    neopixelSetAllColor(0, 0, 255);
+    neopixelStartBlink(500, 25);
     /* Keep blinking until a CRTP client (laptop/mobile) is connected. Poll
        crtpIsConnected() and sleep briefly between checks to avoid busy-looping. */
-    neopixelSetAllColor(0, 0, 255); // Set all LEDs to blue
+    // neopixelSetAllColor(0, 0, 255); // Set all LEDs to blue
     while (!crtpIsConnected())
     {
       wifi_sta_list_t sta_list;
@@ -306,10 +302,10 @@ void systemTask(void *arg)
       vTaskDelay(M2T(100));
     }
     /* Stop blinking when connected and keep LEDs in their last shown state. */
-    // neopixelStopBlink();
-    // neopixelClear();
+    neopixelStopBlink();
+    neopixelClear();
     // Start LED monitoring task
-    xTaskCreate(ledMonitorTask, "LED Monitor", 2048, NULL, 5, NULL);
+    // xTaskCreate(ledMonitorTask, "LED Monitor", 2048, NULL, 5, NULL);
   }
   else
   {
