@@ -75,6 +75,7 @@ MANEUVER_THRESHOLD = (
 )
 APPROACH_DISTANCE = 0.2  # Distance at which to start reducing control corrections
 APPROACH_FACTOR = 0.5  # Factor to reduce corrections when approaching target
+JOYSTICK_SENSITIVITY = 0.5  # Default joystick sensitivity (0.1-2.0)
 
 # === GLOBAL VARIABLES ===
 # Sensor data
@@ -695,6 +696,14 @@ class DeadReckoningGUI:
         self.flight_running = False
         self.sensor_test_thread = None  # New thread variable for sensor test
         self.sensor_test_running = False  # New flag for sensor test running state
+        self.joystick_thread = None  # Thread for joystick control
+        self.joystick_active = False  # Flag for joystick control active
+        self.joystick_keys = {
+            "w": False,
+            "a": False,
+            "s": False,
+            "d": False,
+        }  # Joystick key states
 
         self.create_ui()
         self.setup_plots()
@@ -721,6 +730,11 @@ class DeadReckoningGUI:
         self.anim = animation.FuncAnimation(
             self.fig, self.update_plots, interval=100, cache_frame_data=False
         )
+
+        # Bind keyboard events for joystick control
+        self.root.bind("<KeyPress>", self.on_key_press)
+        self.root.bind("<KeyRelease>", self.on_key_release)
+        self.root.focus_set()  # Ensure root window has focus for key events
 
     def create_ui(self):
         """Create the user interface"""
@@ -890,115 +904,244 @@ class DeadReckoningGUI:
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def create_maneuver_controls(self, parent):
-        """Create maneuver control buttons in joystick layout"""
-        # Maneuver distance control
-        distance_frame = tk.Frame(parent)
-        distance_frame.pack(fill=tk.X, pady=5)
-        tk.Label(distance_frame, text="Maneuver Distance (m):", width=18).pack(
-            side=tk.LEFT
+        """Create maneuver control buttons in compact layout"""
+        # Main container frame for both maneuver and joystick controls
+        main_controls_frame = tk.Frame(parent)
+        main_controls_frame.pack(fill=tk.X, pady=5)
+
+        # Left side - Maneuver Controls (more compact)
+        maneuver_frame = tk.LabelFrame(
+            main_controls_frame, text="Maneuver Controls", padx=5, pady=5
         )
+        maneuver_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 3))
+
+        # Maneuver distance control (compact)
+        distance_frame = tk.Frame(maneuver_frame)
+        distance_frame.pack(fill=tk.X, pady=2)
+        tk.Label(distance_frame, text="Distance (m):", width=12).pack(side=tk.LEFT)
         self.maneuver_distance_var = tk.StringVar(value=str(MANEUVER_DISTANCE))
         self.maneuver_distance_entry = tk.Entry(
-            distance_frame, textvariable=self.maneuver_distance_var, width=8
+            distance_frame, textvariable=self.maneuver_distance_var, width=6
         )
-        self.maneuver_distance_entry.pack(side=tk.LEFT, padx=5)
+        self.maneuver_distance_entry.pack(side=tk.LEFT, padx=2)
 
-        # Joystick layout frame (3x3 grid)
-        joystick_frame = tk.Frame(parent)
-        joystick_frame.pack(pady=10)
+        # Joystick layout frame (compact 3x3 grid)
+        joystick_frame = tk.Frame(maneuver_frame)
+        joystick_frame.pack(pady=5)
 
         # Create a 3x3 grid for joystick layout
         for i in range(3):
             joystick_frame.grid_rowconfigure(i, weight=1)
             joystick_frame.grid_columnconfigure(i, weight=1)
 
-        # Forward button (top center)
+        # Forward button (top center) - smaller
         self.forward_button = tk.Button(
             joystick_frame,
             text="↑\nForward",
             command=self.maneuver_forward,
             bg="blue",
             fg="white",
-            font=("Arial", 10),
-            width=8,
+            font=("Arial", 9),
+            width=6,
             height=2,
         )
-        self.forward_button.grid(row=0, column=1, padx=5, pady=5)
+        self.forward_button.grid(row=0, column=1, padx=2, pady=2)
 
-        # Left button (middle left) - swapped to Right command
+        # Left button (middle left) - smaller
         self.left_button = tk.Button(
             joystick_frame,
             text="→\nRight",
             command=self.maneuver_right,
             bg="blue",
             fg="white",
-            font=("Arial", 10),
-            width=8,
+            font=("Arial", 9),
+            width=6,
             height=2,
         )
-        self.left_button.grid(row=1, column=2, padx=5, pady=5)
+        self.left_button.grid(row=1, column=2, padx=2, pady=2)
 
-        # Stop button (center)
+        # Stop button (center) - smaller
         self.stop_button = tk.Button(
             joystick_frame,
             text="STOP",
             command=self.stop_maneuver,
             bg="red",
             fg="white",
-            font=("Arial", 12, "bold"),
-            width=8,
+            font=("Arial", 10, "bold"),
+            width=6,
             height=2,
         )
-        self.stop_button.grid(row=1, column=1, padx=5, pady=5)
+        self.stop_button.grid(row=1, column=1, padx=2, pady=2)
 
-        # Right button (middle right) - swapped to Left command
+        # Right button (middle right) - smaller
         self.right_button = tk.Button(
             joystick_frame,
             text="←\nLeft",
             command=self.maneuver_left,
             bg="blue",
             fg="white",
-            font=("Arial", 10),
-            width=8,
+            font=("Arial", 9),
+            width=6,
             height=2,
         )
-        self.right_button.grid(row=1, column=0, padx=5, pady=5)
+        self.right_button.grid(row=1, column=0, padx=2, pady=2)
 
-        # Backward button (bottom center)
+        # Backward button (bottom center) - smaller
         self.backward_button = tk.Button(
             joystick_frame,
             text="↓\nBackward",
             command=self.maneuver_backward,
             bg="blue",
             fg="white",
-            font=("Arial", 10),
-            width=8,
+            font=("Arial", 9),
+            width=6,
             height=2,
         )
-        self.backward_button.grid(row=2, column=1, padx=5, pady=5)
+        self.backward_button.grid(row=2, column=1, padx=2, pady=2)
 
-        # Shape maneuver buttons
-        shape_frame = tk.Frame(parent)
-        shape_frame.pack(pady=10)
-        tk.Label(shape_frame, text="Shape Maneuvers:").pack()
+        # Shape maneuver buttons (compact horizontal layout)
+        shape_frame = tk.Frame(maneuver_frame)
+        shape_frame.pack(pady=3)
+        tk.Label(shape_frame, text="Shapes:").pack(side=tk.LEFT, padx=(0, 3))
         self.square_button = tk.Button(
             shape_frame,
             text="Square",
             command=self.maneuver_square,
             bg="purple",
             fg="white",
-            font=("Arial", 10),
+            font=("Arial", 9),
+            width=6,
         )
-        self.square_button.pack(side=tk.LEFT, padx=5)
+        self.square_button.pack(side=tk.LEFT, padx=1)
         self.circle_button = tk.Button(
             shape_frame,
             text="Circle",
             command=self.maneuver_circle,
             bg="purple",
             fg="white",
-            font=("Arial", 10),
+            font=("Arial", 9),
+            width=6,
         )
-        self.circle_button.pack(side=tk.LEFT, padx=5)
+        self.circle_button.pack(side=tk.LEFT, padx=1)
+
+        # Right side - Joystick Controls (more compact)
+        joystick_control_frame = tk.LabelFrame(
+            main_controls_frame, text="Joystick Control", padx=5, pady=5
+        )
+        joystick_control_frame.pack(
+            side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(3, 0)
+        )
+
+        # Joystick sensitivity control (compact)
+        sensitivity_frame = tk.Frame(joystick_control_frame)
+        sensitivity_frame.pack(fill=tk.X, pady=2)
+        tk.Label(sensitivity_frame, text="Sensitivity:", width=10).pack(side=tk.LEFT)
+        self.joystick_sensitivity_var = tk.StringVar(value=str(JOYSTICK_SENSITIVITY))
+        self.joystick_sensitivity_entry = tk.Entry(
+            sensitivity_frame, textvariable=self.joystick_sensitivity_var, width=5
+        )
+        self.joystick_sensitivity_entry.pack(side=tk.LEFT, padx=2)
+        tk.Label(
+            sensitivity_frame, text="(0.1-2.0)", font=("Arial", 7), fg="gray"
+        ).pack(side=tk.LEFT)
+
+        # Joystick button layout frame (compact 3x3 grid)
+        joystick_buttons_frame = tk.Frame(joystick_control_frame)
+        joystick_buttons_frame.pack(pady=5)
+
+        # Create a 3x3 grid for joystick layout
+        for i in range(3):
+            joystick_buttons_frame.grid_rowconfigure(i, weight=1)
+            joystick_buttons_frame.grid_columnconfigure(i, weight=1)
+
+        # Forward button (top center) - smaller
+        self.joystick_forward_button = tk.Button(
+            joystick_buttons_frame,
+            text="↑\nW",
+            command=lambda: self.simulate_key_press("w"),
+            bg="green",
+            fg="white",
+            font=("Arial", 9),
+            width=5,
+            height=2,
+        )
+        self.joystick_forward_button.grid(row=0, column=1, padx=2, pady=2)
+
+        # Left button (middle left) - smaller
+        self.joystick_left_button = tk.Button(
+            joystick_buttons_frame,
+            text="←\nA",
+            command=lambda: self.simulate_key_press("a"),
+            bg="green",
+            fg="white",
+            font=("Arial", 9),
+            width=5,
+            height=2,
+        )
+        self.joystick_left_button.grid(row=1, column=0, padx=2, pady=2)
+
+        # Stop button (center) - smaller
+        self.joystick_stop_button = tk.Button(
+            joystick_buttons_frame,
+            text="STOP",
+            command=self.stop_joystick_control,
+            bg="red",
+            fg="white",
+            font=("Arial", 10, "bold"),
+            width=5,
+            height=2,
+        )
+        self.joystick_stop_button.grid(row=1, column=1, padx=2, pady=2)
+
+        # Right button (middle right) - smaller
+        self.joystick_right_button = tk.Button(
+            joystick_buttons_frame,
+            text="→\nD",
+            command=lambda: self.simulate_key_press("d"),
+            bg="green",
+            fg="white",
+            font=("Arial", 9),
+            width=5,
+            height=2,
+        )
+        self.joystick_right_button.grid(row=1, column=2, padx=2, pady=2)
+
+        # Backward button (bottom center) - smaller
+        self.joystick_backward_button = tk.Button(
+            joystick_buttons_frame,
+            text="↓\nS",
+            command=lambda: self.simulate_key_press("s"),
+            bg="green",
+            fg="white",
+            font=("Arial", 9),
+            width=5,
+            height=2,
+        )
+        self.joystick_backward_button.grid(row=2, column=1, padx=2, pady=2)
+
+        # Joystick control buttons (centered start button only)
+        control_buttons_frame = tk.Frame(joystick_control_frame)
+        control_buttons_frame.pack(fill=tk.X, pady=3)
+
+        self.start_joystick_button = tk.Button(
+            control_buttons_frame,
+            text="Start Joystick",
+            command=self.start_joystick_control,
+            bg="green",
+            fg="white",
+            font=("Arial", 9, "bold"),
+            width=15,
+        )
+        self.start_joystick_button.pack(expand=True)
+
+        # Joystick status display (compact)
+        self.joystick_status_var = tk.StringVar(value="Joystick: INACTIVE")
+        tk.Label(
+            joystick_control_frame,
+            textvariable=self.joystick_status_var,
+            font=("Arial", 9, "bold"),
+            fg="blue",
+        ).pack(pady=2)
 
     def maneuver_forward(self):
         """Execute forward maneuver"""
@@ -1239,6 +1382,40 @@ class DeadReckoningGUI:
             row4, textvariable=self.corr_vy_var, font=("Arial", 11), fg="red"
         ).pack(side=tk.LEFT, padx=20)
 
+        # Control buttons row
+        button_row = tk.Frame(parent)
+        button_row.pack(fill=tk.X, pady=10)
+
+        self.apply_all_button = tk.Button(
+            button_row,
+            text="Apply All Values",
+            command=self.apply_all_values,
+            bg="green",
+            fg="black",
+            font=("Arial", 10, "bold"),
+        )
+        self.apply_all_button.pack(side=tk.LEFT, padx=5)
+
+        self.reset_all_button = tk.Button(
+            button_row,
+            text="Reset to Default",
+            command=self.reset_all_values,
+            bg="orange",
+            fg="black",
+            font=("Arial", 10),
+        )
+        self.reset_all_button.pack(side=tk.LEFT, padx=5)
+
+        self.clear_graphs_button = tk.Button(
+            button_row,
+            text="Clear Graphs",
+            command=self.clear_graphs,
+            bg="blue",
+            fg="black",
+            font=("Arial", 10),
+        )
+        self.clear_graphs_button.pack(side=tk.LEFT, padx=5)
+
     # --- NEW FUNCTION: create_runtime_controls ---
     def create_runtime_controls(self, parent):
         """Create runtime adjustable parameter controls"""
@@ -1373,18 +1550,6 @@ class DeadReckoningGUI:
             max_pos_err_frame, textvariable=self.max_pos_err_var, width=8
         )
         self.max_pos_err_entry.pack(side=tk.LEFT, padx=5)
-
-        # Apply button for runtime parameters (below both columns)
-        apply_runtime_frame = tk.Frame(parent)
-        apply_runtime_frame.pack(fill=tk.X, pady=5)
-        self.apply_runtime_button = tk.Button(
-            apply_runtime_frame,
-            text="Apply Runtime Values",
-            command=self.apply_runtime_values,
-            bg="lightgreen",
-            fg="black",
-        )
-        self.apply_runtime_button.pack(side=tk.LEFT, padx=5)
 
     # --- END NEW FUNCTION ---
 
@@ -1785,37 +1950,6 @@ class DeadReckoningGUI:
             fg="gray",
         ).pack()
 
-        # Control buttons (horizontal layout) - span across both sections
-        button_frame = tk.Frame(parent)
-        button_frame.pack(fill=tk.X, pady=5)
-
-        self.apply_all_button = tk.Button(
-            button_frame,
-            text="Apply All Values",
-            command=self.apply_all_values,
-            bg="green",
-            fg="black",
-        )
-        self.apply_all_button.pack(side=tk.LEFT, padx=5)
-
-        self.reset_all_button = tk.Button(
-            button_frame,
-            text="Reset to Default",
-            command=self.reset_all_values,
-            bg="orange",
-            fg="black",
-        )
-        self.reset_all_button.pack(side=tk.LEFT, padx=5)
-
-        self.clear_graphs_button = tk.Button(
-            button_frame,
-            text="Clear Graphs",
-            command=self.clear_graphs,
-            bg="blue",
-            fg="black",
-        )
-        self.clear_graphs_button.pack(side=tk.LEFT, padx=5)
-
     def setup_plots(self):
         """Setup matplotlib plots"""
         # Create 2x2 subplot layout
@@ -2135,8 +2269,10 @@ class DeadReckoningGUI:
         print("PID values reset to default")
 
     def apply_all_values(self):
-        """Apply PID, TRIM, and Optical Flow scaling values from GUI inputs"""
-        # First apply PID values
+        """Apply PID, TRIM, Optical Flow scaling, and Runtime values from GUI inputs"""
+        # First apply runtime values
+        self.apply_runtime_values()
+        # Then apply PID values
         self.apply_pid_values()
         # Then apply TRIM values
         global TRIM_VX, TRIM_VY, OPTICAL_FLOW_SCALE, USE_HEIGHT_SCALING
@@ -2159,6 +2295,17 @@ class DeadReckoningGUI:
             print(f"Error applying Optical Flow scaling: {e}")
             print("Please enter valid numbers for scaling factor")
 
+        # Apply Joystick sensitivity
+        try:
+            global JOYSTICK_SENSITIVITY
+            JOYSTICK_SENSITIVITY = float(self.joystick_sensitivity_var.get())
+            if JOYSTICK_SENSITIVITY < 0.1 or JOYSTICK_SENSITIVITY > 2.0:
+                raise ValueError("Sensitivity must be between 0.1 and 2.0")
+            print(f"Joystick Sensitivity Applied: {JOYSTICK_SENSITIVITY}")
+        except ValueError as e:
+            print(f"Error applying joystick sensitivity: {e}")
+            print("Please enter a value between 0.1 and 2.0")
+
     def reset_all_values(self):
         """Reset PID, TRIM, and Optical Flow scaling values to default"""
         # Reset PID values
@@ -2180,10 +2327,13 @@ class DeadReckoningGUI:
         self.drift_rate_var.set("0.003")
         self.reset_int_var.set("30.0")
         self.max_pos_err_var.set("2.0")
+        # Reset Joystick sensitivity
+        self.joystick_sensitivity_var.set("0.5")
         # Apply all values
         global TRIM_VX, TRIM_VY, OPTICAL_FLOW_SCALE, USE_HEIGHT_SCALING
         global TARGET_HEIGHT, TAKEOFF_TIME, HOVER_DURATION, LANDING_TIME, VELOCITY_SMOOTHING_ALPHA, MAX_CORRECTION
         global VELOCITY_THRESHOLD, DRIFT_COMPENSATION_RATE, PERIODIC_RESET_INTERVAL, MAX_POSITION_ERROR
+        global JOYSTICK_SENSITIVITY
         TRIM_VX = 0.1
         TRIM_VY = -0.02
         OPTICAL_FLOW_SCALE = 3.7
@@ -2198,6 +2348,7 @@ class DeadReckoningGUI:
         DRIFT_COMPENSATION_RATE = 0.003
         PERIODIC_RESET_INTERVAL = 30.0
         MAX_POSITION_ERROR = 2.0
+        JOYSTICK_SENSITIVITY = 0.5
         print("All values reset to default")
 
     def clear_graphs(self):
@@ -2624,6 +2775,304 @@ class DeadReckoningGUI:
             else:
                 self.status_var.set("Status: Flight Complete")
 
+    def start_joystick_control(self):
+        """Start joystick control using keyboard input"""
+        if (
+            not self.joystick_active
+            and not self.flight_running
+            and not self.sensor_test_running
+        ):
+            try:
+                # Get sensitivity value
+                JOYSTICK_SENSITIVITY = float(self.joystick_sensitivity_var.get())
+                if JOYSTICK_SENSITIVITY < 0.1 or JOYSTICK_SENSITIVITY > 2.0:
+                    raise ValueError("Sensitivity must be between 0.1 and 2.0")
+
+                # Battery safety check
+                if current_battery_voltage > 0 and current_battery_voltage < 3.4:
+                    self.status_var.set(
+                        f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start joystick control."
+                    )
+                    return
+                elif current_battery_voltage == 0.0:
+                    print("WARNING: Battery voltage unknown")
+
+                # SENSOR SAFETY CHECK
+                if not sensor_data_ready:
+                    self.status_var.set(
+                        "Status: Sensor data not ready! Wait for height & motion readings."
+                    )
+                    return
+
+                if current_height <= 0.0:
+                    self.status_var.set(
+                        "Status: Invalid height reading! Ensure drone is powered and sensors active."
+                    )
+                    return
+
+                # Start joystick control
+                self.joystick_active = True
+                self.start_joystick_button.config(state=tk.DISABLED)
+                # self.stop_joystick_button.config(state=tk.NORMAL)  # Removed duplicate stop button
+                self.joystick_status_var.set("Joystick: ACTIVE")
+                self.status_var.set("Status: Joystick Control Active - Use WASD keys")
+
+                # Initialize joystick target position to current position
+                global target_position_x, target_position_y, maneuver_active
+                target_position_x = integrated_position_x
+                target_position_y = integrated_position_y
+                maneuver_active = True  # Enable position hold
+
+                # Force focus to the window for key events
+                self.root.focus_force()
+
+                # Start joystick control thread
+                self.joystick_thread = threading.Thread(
+                    target=self.joystick_control_thread
+                )
+                self.joystick_thread.daemon = True
+                self.joystick_thread.start()
+
+            except ValueError as e:
+                self.status_var.set(f"Status: Invalid sensitivity value - {str(e)}")
+        elif self.flight_running:
+            self.status_var.set("Status: Cannot start joystick while flight is active")
+        elif self.sensor_test_running:
+            self.status_var.set(
+                "Status: Cannot start joystick while sensor test is active"
+            )
+
+    def stop_joystick_control(self):
+        """Stop joystick control"""
+        if self.joystick_active:
+            self.joystick_active = False
+            global maneuver_active
+            maneuver_active = False
+
+            # Wait for thread to finish
+            if self.joystick_thread and self.joystick_thread.is_alive():
+                self.joystick_thread.join(timeout=1.0)
+
+            # Update UI
+            self.start_joystick_button.config(state=tk.NORMAL)
+            # self.stop_joystick_button.config(state=tk.DISABLED)  # Removed duplicate stop button
+            self.joystick_status_var.set("Joystick: INACTIVE")
+            self.status_var.set("Status: Joystick Control Stopped")
+
+    def joystick_control_thread(self):
+        """Joystick control thread that handles position updates"""
+        global target_position_x, target_position_y, maneuver_active, flight_active
+
+        cflib.crtp.init_drivers()
+        cf = Crazyflie(rw_cache="./cache")
+        log_motion = None
+        log_battery = None
+
+        try:
+            with SyncCrazyflie(DRONE_URI, cf=cf) as scf:
+                scf_instance = scf
+                flight_active = True
+
+                # Setup logging
+                log_motion, log_battery = setup_logging(cf)
+                use_position_hold = log_motion is not None
+                if use_position_hold:
+                    time.sleep(1.0)
+
+                # Initialize flight
+                if not DEBUG_MODE:
+                    cf.commander.send_setpoint(0, 0, 0, 0)
+                    time.sleep(0.1)
+                    cf.param.set_value("commander.enHighLevel", "1")
+                    time.sleep(0.5)
+                else:
+                    print(
+                        "DEBUG MODE: Skipping flight initialization for joystick control"
+                    )
+
+                # Takeoff
+                flight_phase = "JOYSTICK_TAKEOFF"
+                global position_integration_enabled
+                position_integration_enabled = False
+                start_time = time.time()
+                init_csv_logging()
+
+                while time.time() - start_time < TAKEOFF_TIME and self.joystick_active:
+                    if not DEBUG_MODE:
+                        cf.commander.send_hover_setpoint(
+                            TRIM_VX, TRIM_VY, 0, TARGET_HEIGHT
+                        )
+                    log_to_csv()
+                    time.sleep(0.01)
+
+                # Reset position tracking and enable integration
+                integrated_position_x = 0.0
+                integrated_position_y = 0.0
+                last_integration_time = time.time()
+                last_reset_time = time.time()
+                position_integration_enabled = True
+
+                # Reset PID state
+                global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
+                global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
+                position_integral_x = 0.0
+                position_integral_y = 0.0
+                velocity_integral_x = 0.0
+                velocity_integral_y = 0.0
+                last_position_error_x = 0.0
+                last_position_error_y = 0.0
+                last_velocity_error_x = 0.0
+                last_velocity_error_y = 0.0
+
+                # Joystick control loop
+                flight_phase = "JOYSTICK_CONTROL"
+
+                while self.joystick_active:
+                    # Update target position based on pressed keys
+                    sensitivity = float(self.joystick_sensitivity_var.get())
+                    move_step = (
+                        0.02 * sensitivity
+                    )  # Increased for better responsiveness
+
+                    if self.joystick_keys["w"]:  # Forward
+                        target_position_y += move_step
+                    if self.joystick_keys["s"]:  # Backward
+                        target_position_y -= move_step
+                    if self.joystick_keys["a"]:  # Left
+                        target_position_x -= move_step
+                    if self.joystick_keys["d"]:  # Right
+                        target_position_x += move_step
+
+                    # Calculate position corrections
+                    if use_position_hold and sensor_data_ready:
+                        motion_vx, motion_vy = calculate_position_hold_corrections()
+                    else:
+                        motion_vx, motion_vy = 0.0, 0.0
+
+                    log_to_csv()
+
+                    # Apply corrections
+                    total_vx = TRIM_VX + motion_vx
+                    total_vy = TRIM_VY + motion_vy
+                    if not DEBUG_MODE:
+                        cf.commander.send_hover_setpoint(
+                            total_vx, total_vy, 0, TARGET_HEIGHT
+                        )
+
+                    time.sleep(CONTROL_UPDATE_RATE)
+
+                # Landing when joystick control stops
+                flight_phase = "JOYSTICK_LANDING"
+                start_time = time.time()
+                while time.time() - start_time < LANDING_TIME and flight_active:
+                    if not DEBUG_MODE:
+                        cf.commander.send_hover_setpoint(TRIM_VX, TRIM_VY, 0, 0)
+                    log_to_csv()
+                    time.sleep(0.01)
+
+                # Stop motors
+                if not DEBUG_MODE:
+                    cf.commander.send_setpoint(0, 0, 0, 0)
+                flight_phase = "JOYSTICK_COMPLETE"
+
+        except Exception as e:
+            flight_phase = f"JOYSTICK_ERROR: {str(e)}"
+        finally:
+            # Stop logging
+            close_csv_logging()
+            if log_motion:
+                try:
+                    log_motion.stop()
+                except:
+                    pass
+            if log_battery:
+                try:
+                    log_battery.stop()
+                except:
+                    pass
+            flight_active = False
+            maneuver_active = False
+            self.joystick_active = False
+            # Update UI in main thread
+            self.root.after(
+                0, lambda: self.start_joystick_button.config(state=tk.NORMAL)
+            )
+            # self.root.after(  # Removed duplicate stop button
+            #     0, lambda: self.stop_joystick_button.config(state=tk.DISABLED)
+            # )
+            self.root.after(
+                0, lambda: self.joystick_status_var.set("Joystick: INACTIVE")
+            )
+            self.root.after(
+                0, lambda: self.status_var.set("Status: Joystick Control Stopped")
+            )
+
+    def on_key_press(self, event):
+        """Handle key press events for joystick control"""
+        if not self.joystick_active:
+            return
+
+        key = event.char.lower()
+        if key in ["w", "a", "s", "d"]:
+            self.joystick_keys[key] = True
+            # Update joystick status to show active keys
+            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+            if active_keys:
+                self.joystick_status_var.set(
+                    f"Joystick: ACTIVE ({','.join(active_keys)})"
+                )
+            else:
+                self.joystick_status_var.set("Joystick: ACTIVE")
+
+    def on_key_release(self, event):
+        """Handle key release events for joystick control"""
+        if not self.joystick_active:
+            return
+
+        key = event.char.lower()
+        if key in ["w", "a", "s", "d"]:
+            self.joystick_keys[key] = False
+            # Update joystick status to show remaining active keys
+            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+            if active_keys:
+                self.joystick_status_var.set(
+                    f"Joystick: ACTIVE ({','.join(active_keys)})"
+                )
+            else:
+                self.joystick_status_var.set("Joystick: ACTIVE")
+
+    def simulate_key_press(self, key):
+        """Simulate a key press for joystick control (used by GUI buttons)"""
+        if not self.joystick_active:
+            return
+
+        key = key.lower()
+        if key in ["w", "a", "s", "d"]:
+            # Temporarily set the key as pressed
+            self.joystick_keys[key] = True
+            # Update status
+            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+            self.joystick_status_var.set(f"Joystick: ACTIVE ({','.join(active_keys)})")
+            # Schedule key release after a short delay (200ms)
+            self.root.after(200, lambda: self.simulate_key_release(key))
+
+    def simulate_key_release(self, key):
+        """Simulate a key release for joystick control"""
+        if not self.joystick_active:
+            return
+
+        key = key.lower()
+        if key in ["w", "a", "s", "d"]:
+            self.joystick_keys[key] = False
+            # Update status
+            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+            if active_keys:
+                self.joystick_status_var.set(
+                    f"Joystick: ACTIVE ({','.join(active_keys)})"
+                )
+            else:
+                self.joystick_status_var.set("Joystick: ACTIVE")
+
 
 def main():
     # Initialize CRTP drivers once at program start so GUI callbacks
@@ -2653,6 +3102,9 @@ def main():
         except Exception:
             pass
         root.destroy()
+        import sys
+
+        sys.exit(0)
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
