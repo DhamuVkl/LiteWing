@@ -89,7 +89,12 @@ static bool canFly;
 static bool armed = ARM_INIT;
 static bool forceArm;
 static bool isInit;
+/* Blink states: track which blink/color is active so we don't repeatedly
+  stop/start the hardware and accidentally override user CRTP control. */
 static bool green_blinking = false;
+static int current_blink_state = 0; /* 0=none,1=blue,2=green,3=red */
+static bool crtp_was_connected = false;
+static bool crtp_indicated_after_wifi = false;
 
 STATIC_MEM_TASK_ALLOC(systemTask, SYSTEM_TASK_STACKSIZE);
 
@@ -176,31 +181,59 @@ static void ledMonitorTask(void *arg)
 {
   while (1)
   {
-    if (crtpIsConnected())
+    bool connected = crtpIsConnected();
+
+    if (connected)
     {
-      neopixelClear();
+      if (!crtp_was_connected)
+      {
+        /* First time CRTP connected - check if WiFi is connected and we haven't indicated yet */
+        wifi_sta_list_t sta_list;
+        esp_wifi_ap_get_sta_list(&sta_list);
+        if (sta_list.num > 0 && !crtp_indicated_after_wifi)
+        {
+          /* Indicate CRTP established after first WiFi connection */
+          neopixelStopBlink();
+          neopixelClear();
+          current_blink_state = 0;
+          crtp_indicated_after_wifi = true;
+        }
+        crtp_was_connected = true;
+      }
+      /* When CRTP connected, keep LEDs as they are (don't override user commands) */
     }
     else
     {
+      /* CRTP not connected */
+      crtp_was_connected = false;
+
       wifi_sta_list_t sta_list;
       esp_wifi_ap_get_sta_list(&sta_list);
+
       if (sta_list.num > 0)
       {
-        if (!green_blinking)
+        /* WiFi client connected, CRTP not - green blinking if not already indicated */
+        if (current_blink_state != 2 && !crtp_indicated_after_wifi)
         {
+          neopixelStopBlink();
           neopixelSetAllColor(0, 255, 0);
           neopixelStartBlink(500, 500);
+          current_blink_state = 2;
           green_blinking = true;
         }
       }
       else
       {
-        if (green_blinking)
+        /* No WiFi client - blinking, reset indication flag */
+        crtp_indicated_after_wifi = false;
+        if (current_blink_state != 3)
         {
           neopixelStopBlink();
+          neopixelSetAllColor(0, 0, 255); /* for no WiFi */
+          neopixelStartBlink(500, 25);
+          current_blink_state = 3;
           green_blinking = false;
         }
-        neopixelSetAllColor(0, 0, 255);
       }
     }
     vTaskDelay(M2T(100));
@@ -288,7 +321,7 @@ void systemTask(void *arg)
     neopixelStartBlink(500, 25);
     /* Keep blinking until a CRTP client (laptop/mobile) is connected. Poll
        crtpIsConnected() and sleep briefly between checks to avoid busy-looping. */
-    // neopixelSetAllColor(0, 0, 255); // Set all LEDs to blue
+
     while (!crtpIsConnected())
     {
       wifi_sta_list_t sta_list;
@@ -302,10 +335,10 @@ void systemTask(void *arg)
       vTaskDelay(M2T(100));
     }
     /* Stop blinking when connected and keep LEDs in their last shown state. */
-    neopixelStopBlink();
-    neopixelClear();
-    // Start LED monitoring task
-    // xTaskCreate(ledMonitorTask, "LED Monitor", 2048, NULL, 5, NULL);
+    // neopixelStopBlink();
+    // neopixelClear();
+    //  Start LED monitoring task
+    xTaskCreate(ledMonitorTask, "LED Monitor", 2048, NULL, 5, NULL);
   }
   else
   {
