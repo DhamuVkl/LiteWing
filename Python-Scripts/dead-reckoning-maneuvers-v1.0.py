@@ -69,8 +69,12 @@ OPTICAL_FLOW_SCALE = (
 USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 
 # === MANEUVER PARAMETERS ===
-MANEUVER_DISTANCE = 0.6  # 10cm default maneuver distance
-MANEUVER_THRESHOLD = 0.02  # Consider maneuver complete when within 2cm of target
+MANEUVER_DISTANCE = 0.5  # 50cm default maneuver distance
+MANEUVER_THRESHOLD = (
+    0.05  # Consider maneuver complete when within 5cm of target (increased from 2cm)
+)
+APPROACH_DISTANCE = 0.2  # Distance at which to start reducing control corrections
+APPROACH_FACTOR = 0.5  # Factor to reduce corrections when approaching target
 
 # === GLOBAL VARIABLES ===
 # Sensor data
@@ -363,6 +367,7 @@ def calculate_position_hold_corrections():
     global last_position_error_x, last_position_error_y
     global velocity_integral_x, velocity_integral_y, velocity_derivative_x, velocity_derivative_y
     global last_velocity_error_x, last_velocity_error_y
+    global maneuver_active
 
     if not sensor_data_ready or current_height <= 0:
         current_correction_vx = 0.0
@@ -436,6 +441,19 @@ def calculate_position_hold_corrections():
     # Combine position and velocity corrections
     total_vx = position_correction_vx + velocity_correction_vx
     total_vy = position_correction_vy + velocity_correction_vy
+
+    # Apply approach factor when close to target (reduce overshoot)
+    if maneuver_active:
+        distance_to_target = (
+            (integrated_position_x - target_position_x) ** 2
+            + (integrated_position_y - target_position_y) ** 2
+        ) ** 0.5
+        if distance_to_target < APPROACH_DISTANCE:
+            approach_factor = APPROACH_FACTOR + (
+                distance_to_target / APPROACH_DISTANCE
+            ) * (1 - APPROACH_FACTOR)
+            total_vx *= approach_factor
+            total_vy *= approach_factor
 
     # Apply limits
     total_vx = max(-MAX_CORRECTION, min(MAX_CORRECTION, total_vx))
