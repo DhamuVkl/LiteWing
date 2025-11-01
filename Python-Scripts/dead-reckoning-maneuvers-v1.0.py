@@ -907,9 +907,7 @@ class DeadReckoningGUI:
         self.create_runtime_controls(runtime_frame)
 
         # Maneuver Controls
-        maneuver_frame = tk.LabelFrame(
-            left_frame, text="Controls", padx=10, pady=10
-        )
+        maneuver_frame = tk.LabelFrame(left_frame, text="Controls", padx=10, pady=10)
         maneuver_frame.pack(fill=tk.X, pady=5)
 
         # Create maneuver controls
@@ -2618,7 +2616,7 @@ class DeadReckoningGUI:
         global flight_phase, flight_active, scf_instance
         global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time
         global maneuver_active, target_position_x, target_position_y
-        global shape_active, shape_waypoints, shape_index
+        global shape_active, shape_waypoints, shape_index, waypoint_start_time
         global current_battery_voltage, battery_data_ready  # Reset battery on new connection
 
         cflib.crtp.init_drivers()
