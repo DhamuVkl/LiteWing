@@ -39,6 +39,8 @@ VELOCITY_SMOOTHING_ALPHA = 0.9  # Default: 0.7 (previously hardcoded)
 # Basic trim corrections
 TRIM_VX = 0.0  # Forward/backward trim correction
 TRIM_VY = -0.1  # Left/right trim correction
+# Battery monitoring
+LOW_BATTERY_THRESHOLD = 2.9  # Low battery warning threshold in volts
 
 # === DEAD RECKONING POSITION CONTROL PARAMETERS ===
 # PID Controller Parameters
@@ -70,13 +72,13 @@ USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 
 # === MANEUVER PARAMETERS ===
 MANEUVER_DISTANCE = 0.5  # 50cm default maneuver distance
-MANEUVER_THRESHOLD = (
-    0.03  # Consider maneuver complete when within 3cm of target (increased from 2cm)
-)
-APPROACH_DISTANCE = 0.15  # Distance at which to start reducing control corrections
-APPROACH_FACTOR = 0.4  # Factor to reduce corrections when approaching target
+MANEUVER_THRESHOLD = 0.02  # Consider maneuver complete when within 2cm of target (tighter for better precision)
+APPROACH_DISTANCE = 0.20  # Distance at which to start reducing control corrections (increased for smoother approach)
+APPROACH_FACTOR = 0.3  # Factor to reduce corrections when approaching target (lower for gentler approach)
 JOYSTICK_SENSITIVITY = 0.5  # Default joystick sensitivity (0.1-2.0)
-WAYPOINT_TIMEOUT = 8.0  # Timeout in seconds before advancing to next waypoint
+WAYPOINT_TIMEOUT = 10.0  # Timeout in seconds before advancing to next waypoint (increased for reliability)
+CORNER_PAUSE_DURATION = 0.3  # Pause duration at corners for stabilization (seconds)
+MIN_VELOCITY_THRESHOLD = 0.002  # Minimum velocity to consider stopped at waypoint
 
 # === GLOBAL VARIABLES ===
 # Sensor data
@@ -451,12 +453,31 @@ def calculate_position_hold_corrections():
             (integrated_position_x - target_position_x) ** 2
             + (integrated_position_y - target_position_y) ** 2
         ) ** 0.5
+
+        # Progressive approach reduction with three zones for smoother control
         if distance_to_target < APPROACH_DISTANCE:
-            approach_factor = APPROACH_FACTOR + (
-                distance_to_target / APPROACH_DISTANCE
-            ) * (1 - APPROACH_FACTOR)
+            # Very close zone (0-5cm): very gentle corrections
+            if distance_to_target < 0.05:
+                approach_factor = 0.15
+            # Close zone (5-15cm): moderate corrections
+            elif distance_to_target < 0.15:
+                approach_factor = 0.25 + (distance_to_target - 0.05) / 0.10 * 0.15
+            # Approach zone (15-20cm): gradual reduction
+            else:
+                approach_factor = APPROACH_FACTOR + (
+                    distance_to_target / APPROACH_DISTANCE
+                ) * (1 - APPROACH_FACTOR)
+
             total_vx *= approach_factor
             total_vy *= approach_factor
+
+            # Additional velocity damping when very close to prevent overshoot
+            if distance_to_target < 0.08:
+                velocity_magnitude = (current_vx**2 + current_vy**2) ** 0.5
+                if velocity_magnitude > 0.02:  # If moving too fast when close
+                    damping_factor = 0.5
+                    total_vx *= damping_factor
+                    total_vy *= damping_factor
 
     # Apply limits
     total_vx = max(-MAX_CORRECTION, min(MAX_CORRECTION, total_vx))
@@ -1236,7 +1257,10 @@ class DeadReckoningGUI:
         global shape_waypoints, shape_index, shape_active, maneuver_active, target_position_x, target_position_y
         if not self.flight_running and not self.sensor_test_running:
             # Battery safety check
-            if current_battery_voltage > 0 and current_battery_voltage < 3.4:
+            if (
+                current_battery_voltage > 0
+                and current_battery_voltage < LOW_BATTERY_THRESHOLD
+            ):
                 self.status_var.set(
                     f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start maneuver."
                 )
@@ -1287,7 +1311,10 @@ class DeadReckoningGUI:
         global maneuver_active, target_position_x, target_position_y
         if not self.flight_running and not self.sensor_test_running:
             # Battery safety check
-            if current_battery_voltage > 0 and current_battery_voltage < 3.4:
+            if (
+                current_battery_voltage > 0
+                and current_battery_voltage < LOW_BATTERY_THRESHOLD
+            ):
                 self.status_var.set(
                     f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start maneuver."
                 )
@@ -2045,7 +2072,7 @@ class DeadReckoningGUI:
         self.phase_var.set(f"Phase: {flight_phase}")
         # Update battery voltage with color coding
         if current_battery_voltage > 0:
-            if current_battery_voltage < 3.4:
+            if current_battery_voltage < LOW_BATTERY_THRESHOLD:
                 battery_color = "red"
                 battery_status = " (LOW!)"
             elif current_battery_voltage < 3.5:
@@ -2554,7 +2581,10 @@ class DeadReckoningGUI:
         """Start the flight in a separate thread with battery and sensor safety checks"""
         if not self.flight_running and not self.sensor_test_running:
             # Battery safety check
-            if current_battery_voltage > 0 and current_battery_voltage < 3.4:
+            if (
+                current_battery_voltage > 0
+                and current_battery_voltage < LOW_BATTERY_THRESHOLD
+            ):
                 self.status_var.set(
                     f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start flight."
                 )
@@ -2618,6 +2648,7 @@ class DeadReckoningGUI:
         global maneuver_active, target_position_x, target_position_y
         global shape_active, shape_waypoints, shape_index, waypoint_start_time
         global current_battery_voltage, battery_data_ready  # Reset battery on new connection
+        global position_integral_x, position_integral_y  # PID integral terms
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
@@ -2720,6 +2751,8 @@ class DeadReckoningGUI:
                         print("DEBUG MODE: Simulating maneuver phase")
                     # Move towards target position
                     maneuver_start_time = time.time()
+                    corner_pause_start = None  # Track corner pause timing
+
                     while flight_active:
                         if use_position_hold and sensor_data_ready:
                             motion_vx, motion_vy = calculate_position_hold_corrections()
@@ -2729,13 +2762,44 @@ class DeadReckoningGUI:
                                 + (integrated_position_y - target_position_y) ** 2
                             ) ** 0.5
 
+                            # Check current velocity for stability
+                            velocity_magnitude = (current_vx**2 + current_vy**2) ** 0.5
+                            is_nearly_stopped = (
+                                velocity_magnitude < MIN_VELOCITY_THRESHOLD
+                            )
+
                             # Check for waypoint timeout (prevent getting stuck on corners)
                             waypoint_timeout = (
                                 time.time() - waypoint_start_time > WAYPOINT_TIMEOUT
                             )
 
-                            if (
+                            # Waypoint reached conditions: close enough AND nearly stopped
+                            waypoint_reached = (
                                 distance_to_target < MANEUVER_THRESHOLD
+                                and is_nearly_stopped
+                            )
+
+                            # Corner pause logic for shape maneuvers
+                            if (
+                                shape_active
+                                and waypoint_reached
+                                and corner_pause_start is None
+                            ):
+                                corner_pause_start = time.time()
+                                print(
+                                    f"Corner reached - stabilizing for {CORNER_PAUSE_DURATION}s"
+                                )
+
+                            # Check if corner pause is complete
+                            corner_pause_complete = False
+                            if corner_pause_start is not None:
+                                corner_pause_complete = (
+                                    time.time() - corner_pause_start
+                                ) >= CORNER_PAUSE_DURATION
+
+                            if (
+                                waypoint_reached
+                                and (not shape_active or corner_pause_complete)
                                 or waypoint_timeout
                             ):
                                 if waypoint_timeout:
@@ -2752,11 +2816,21 @@ class DeadReckoningGUI:
                                         waypoint_start_time = (
                                             time.time()
                                         )  # Reset timeout for new waypoint
+                                        corner_pause_start = None  # Reset corner pause
+
+                                        # Reset PID integral terms to prevent overshoot at new waypoint
+                                        position_integral_x = 0.0
+                                        position_integral_y = 0.0
+
                                         flight_phase = f"MANEUVER {shape_index+1}/{len(shape_waypoints)}"
+                                        print(
+                                            f"Moving to waypoint {shape_index+1}/{len(shape_waypoints)} at ({target_position_x:.3f}, {target_position_y:.3f})"
+                                        )
                                     else:
                                         shape_active = False
                                         maneuver_active = False
                                         flight_phase = "MANEUVER_COMPLETE"
+                                        print("Square maneuver complete!")
                                         break
                                 else:
                                     flight_phase = "MANEUVER_COMPLETE"
@@ -2857,7 +2931,10 @@ class DeadReckoningGUI:
                     raise ValueError("Sensitivity must be between 0.1 and 2.0")
 
                 # Battery safety check
-                if current_battery_voltage > 0 and current_battery_voltage < 3.4:
+                if (
+                    current_battery_voltage > 0
+                    and current_battery_voltage < LOW_BATTERY_THRESHOLD
+                ):
                     self.status_var.set(
                         f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start joystick control."
                     )
