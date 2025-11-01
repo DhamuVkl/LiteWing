@@ -71,11 +71,12 @@ USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 # === MANEUVER PARAMETERS ===
 MANEUVER_DISTANCE = 0.5  # 50cm default maneuver distance
 MANEUVER_THRESHOLD = (
-    0.05  # Consider maneuver complete when within 5cm of target (increased from 2cm)
+    0.03  # Consider maneuver complete when within 3cm of target (increased from 2cm)
 )
-APPROACH_DISTANCE = 0.2  # Distance at which to start reducing control corrections
-APPROACH_FACTOR = 0.5  # Factor to reduce corrections when approaching target
+APPROACH_DISTANCE = 0.15  # Distance at which to start reducing control corrections
+APPROACH_FACTOR = 0.4  # Factor to reduce corrections when approaching target
 JOYSTICK_SENSITIVITY = 0.5  # Default joystick sensitivity (0.1-2.0)
+WAYPOINT_TIMEOUT = 8.0  # Timeout in seconds before advancing to next waypoint
 
 # === GLOBAL VARIABLES ===
 # Sensor data
@@ -129,6 +130,7 @@ target_position_y = 0.0
 shape_active = False
 shape_waypoints = []
 shape_index = 0
+waypoint_start_time = 0.0
 # Data history for plotting
 max_history_points = 200
 time_history = []
@@ -303,8 +305,8 @@ def _try_send_with_retries(cf, fn, *args, retries=NP_SEND_RETRIES):
 
 def calculate_velocity(delta_value, altitude):
     """Convert optical flow delta to linear velocity"""
-    if altitude <= 0:
-        return 0.0
+    if altitude <= 0 or altitude > 5.0:  # Invalid height check
+        return 0.0  # Return zero velocity for invalid height
     if USE_HEIGHT_SCALING:
         # Original height-dependent calculation
         velocity_constant = (5.4 * DEG_TO_RAD) / (30.0 * DT)
@@ -505,9 +507,33 @@ def motion_callback(timestamp, data, logconf):
     current_height = data.get("stateEstimate.z", 0)
     motion_delta_x = data.get("motion.deltaX", 0)
     motion_delta_y = data.get("motion.deltaY", 0)
-    sensor_data_ready = True
 
-    # Calculate velocities
+    # Validate sensor data before marking as ready
+    # Check for reasonable height (positive and not too high)
+    height_valid = 0.01 <= current_height <= 5.0  # 1cm to 5m range
+
+    # Check for reasonable motion deltas (not extreme values that indicate sensor errors)
+    motion_valid = (
+        abs(motion_delta_x) <= 1000  # Reasonable range for optical flow deltas
+        and abs(motion_delta_y) <= 1000
+    )
+
+    # Only mark sensor data as ready if both height and motion data are valid
+    if height_valid and motion_valid:
+        sensor_data_ready = True
+    else:
+        # Keep previous sensor_data_ready state if data is invalid
+        # This prevents dropping to "not ready" on single bad readings
+        if not sensor_data_ready:
+            sensor_data_ready = False
+        # Log invalid data for debugging
+        if motion_callback.debug_counter % 50 == 0:  # Less frequent logging
+            print(
+                f"Invalid sensor data - Height: {current_height:.3f} (valid: {height_valid}), "
+                f"Motion: X={motion_delta_x}, Y={motion_delta_y} (valid: {motion_valid})"
+            )
+
+    # Calculate velocities even with potentially invalid data (they will be filtered later)
     raw_velocity_x = calculate_velocity(motion_delta_x, current_height)
     raw_velocity_y = calculate_velocity(motion_delta_y, current_height)
 
@@ -516,8 +542,10 @@ def motion_callback(timestamp, data, logconf):
         motion_callback.debug_counter += 1
     else:
         motion_callback.debug_counter = 0
-    if motion_callback.debug_counter % 100 == 0 and (
-        abs(motion_delta_x) > 0 or abs(motion_delta_y) > 0
+    if (
+        motion_callback.debug_counter % 100 == 0
+        and sensor_data_ready
+        and (abs(motion_delta_x) > 0 or abs(motion_delta_y) > 0)
     ):
         print(
             f"Sensor Debug - Height: {current_height:.3f}m, "
@@ -880,7 +908,7 @@ class DeadReckoningGUI:
 
         # Maneuver Controls
         maneuver_frame = tk.LabelFrame(
-            left_frame, text="Maneuver Controls", padx=10, pady=10
+            left_frame, text="Controls", padx=10, pady=10
         )
         maneuver_frame.pack(fill=tk.X, pady=5)
 
@@ -1024,16 +1052,6 @@ class DeadReckoningGUI:
             width=6,
         )
         self.square_button.pack(side=tk.LEFT, padx=1)
-        self.circle_button = tk.Button(
-            shape_frame,
-            text="Circle",
-            command=self.maneuver_circle,
-            bg="purple",
-            fg="white",
-            font=("Arial", 9),
-            width=6,
-        )
-        self.circle_button.pack(side=tk.LEFT, padx=1)
 
         # Right side - Joystick Controls (more compact)
         joystick_control_frame = tk.LabelFrame(
@@ -1204,15 +1222,6 @@ class DeadReckoningGUI:
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
-    def maneuver_circle(self):
-        """Execute circle maneuver"""
-        try:
-            radius = float(self.maneuver_distance_var.get())
-            waypoints = self.calculate_circle_waypoints(radius)
-            self.start_shape_maneuver(waypoints)
-        except ValueError:
-            self.status_var.set("Status: Invalid maneuver distance")
-
     def calculate_square_waypoints(self, distance):
         """Calculate waypoints for square pattern"""
         x = integrated_position_x
@@ -1223,19 +1232,6 @@ class DeadReckoningGUI:
             (x, y + distance),
             (x, y),
         ]
-
-    def calculate_circle_waypoints(self, radius):
-        """Calculate waypoints for circle pattern"""
-        x = integrated_position_x
-        y = integrated_position_y
-        waypoints = []
-        num_points = 12  # Smooth circle approximation
-        for i in range(num_points):
-            angle = 2 * math.pi * i / num_points
-            waypoints.append(
-                (x + radius * math.cos(angle), y + radius * math.sin(angle))
-            )
-        return waypoints
 
     def start_shape_maneuver(self, waypoints):
         """Start a shape maneuver with waypoints"""
@@ -1269,6 +1265,7 @@ class DeadReckoningGUI:
             shape_active = True
             maneuver_active = True
             target_position_x, target_position_y = shape_waypoints[0]
+            waypoint_start_time = time.time()  # Initialize timeout tracking
 
             # Proceed
             self.flight_running = True
@@ -1276,7 +1273,7 @@ class DeadReckoningGUI:
                 text="Stop Flight", command=self.emergency_stop, bg="red"
             )
             self.status_var.set(
-                f"Status: Starting Shape Maneuver ({len(waypoints)} points)..."
+                f"Status: Starting Shape Maneuver ({len(waypoints)} points) - Stabilizing height first..."
             )
             self.flight_thread = threading.Thread(target=self.flight_controller_thread)
             self.flight_thread.daemon = True
@@ -1324,7 +1321,7 @@ class DeadReckoningGUI:
                 text="Stop Flight", command=self.emergency_stop, bg="red"
             )
             self.status_var.set(
-                f"Status: Starting Maneuver ({delta_x:.2f}, {delta_y:.2f})..."
+                f"Status: Starting Maneuver ({delta_x:.2f}, {delta_y:.2f}) - Stabilizing height first..."
             )
             self.flight_thread = threading.Thread(target=self.flight_controller_thread)
             self.flight_thread.daemon = True
@@ -2694,6 +2691,30 @@ class DeadReckoningGUI:
                 last_velocity_error_x = 0.0
                 last_velocity_error_y = 0.0
 
+                # Height stabilization phase - wait for drone to stabilize at target height
+                flight_phase = "STABILIZING"
+                if DEBUG_MODE:
+                    print("DEBUG MODE: Simulating stabilization phase")
+                stabilization_start = time.time()
+                stabilization_duration = 3.0  # 3 seconds to stabilize
+                while (
+                    time.time() - stabilization_start < stabilization_duration
+                    and flight_active
+                ):
+                    if use_position_hold and sensor_data_ready:
+                        motion_vx, motion_vy = calculate_position_hold_corrections()
+                    else:
+                        motion_vx, motion_vy = 0.0, 0.0
+                    log_to_csv()
+                    # Apply corrections (note: axes swapped)
+                    total_vx = TRIM_VX + motion_vy
+                    total_vy = TRIM_VY + motion_vx
+                    if not DEBUG_MODE:
+                        cf.commander.send_hover_setpoint(
+                            total_vx, total_vy, 0, TARGET_HEIGHT
+                        )
+                    time.sleep(CONTROL_UPDATE_RATE)
+
                 # Position hold hover or maneuver
                 if maneuver_active:
                     flight_phase = "MANEUVER"
@@ -2709,13 +2730,30 @@ class DeadReckoningGUI:
                                 (integrated_position_x - target_position_x) ** 2
                                 + (integrated_position_y - target_position_y) ** 2
                             ) ** 0.5
-                            if distance_to_target < MANEUVER_THRESHOLD:
+
+                            # Check for waypoint timeout (prevent getting stuck on corners)
+                            waypoint_timeout = (
+                                time.time() - waypoint_start_time > WAYPOINT_TIMEOUT
+                            )
+
+                            if (
+                                distance_to_target < MANEUVER_THRESHOLD
+                                or waypoint_timeout
+                            ):
+                                if waypoint_timeout:
+                                    print(
+                                        f"Waypoint timeout ({WAYPOINT_TIMEOUT}s) - advancing to next waypoint"
+                                    )
+
                                 if shape_active:
                                     shape_index += 1
                                     if shape_index < len(shape_waypoints):
                                         target_position_x, target_position_y = (
                                             shape_waypoints[shape_index]
                                         )
+                                        waypoint_start_time = (
+                                            time.time()
+                                        )  # Reset timeout for new waypoint
                                         flight_phase = f"MANEUVER {shape_index+1}/{len(shape_waypoints)}"
                                     else:
                                         shape_active = False
@@ -2847,7 +2885,9 @@ class DeadReckoningGUI:
                 self.start_joystick_button.config(state=tk.DISABLED)
                 # self.stop_joystick_button.config(state=tk.NORMAL)  # Removed duplicate stop button
                 self.joystick_status_var.set("Joystick: ACTIVE")
-                self.status_var.set("Status: Joystick Control Active - Use WASD keys")
+                self.status_var.set(
+                    "Status: Joystick Control Starting - Stabilizing height first..."
+                )
 
                 # Initialize joystick target position to current position
                 global target_position_x, target_position_y, maneuver_active
@@ -2960,6 +3000,28 @@ class DeadReckoningGUI:
                 last_position_error_y = 0.0
                 last_velocity_error_x = 0.0
                 last_velocity_error_y = 0.0
+
+                # Height stabilization phase - wait for drone to stabilize at target height
+                flight_phase = "JOYSTICK_STABILIZING"
+                stabilization_start = time.time()
+                stabilization_duration = 3.0  # 3 seconds to stabilize
+                while (
+                    time.time() - stabilization_start < stabilization_duration
+                    and self.joystick_active
+                ):
+                    if use_position_hold and sensor_data_ready:
+                        motion_vx, motion_vy = calculate_position_hold_corrections()
+                    else:
+                        motion_vx, motion_vy = 0.0, 0.0
+                    log_to_csv()
+                    # Apply corrections (note: axes swapped)
+                    total_vx = TRIM_VX + motion_vy
+                    total_vy = TRIM_VY + motion_vx
+                    if not DEBUG_MODE:
+                        cf.commander.send_hover_setpoint(
+                            total_vx, total_vy, 0, TARGET_HEIGHT
+                        )
+                    time.sleep(CONTROL_UPDATE_RATE)
 
                 # Joystick control loop
                 flight_phase = "JOYSTICK_CONTROL"
