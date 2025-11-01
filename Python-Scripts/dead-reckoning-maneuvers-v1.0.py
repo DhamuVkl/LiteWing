@@ -763,6 +763,17 @@ class DeadReckoningGUI:
         )
         self.sensor_test_button.pack(side=tk.LEFT, padx=10)
 
+        # Reset Battery button - resets battery voltage reading
+        self.reset_battery_button = tk.Button(
+            control_frame,
+            text="Reset Battery",
+            command=self.reset_battery,
+            bg="orange",
+            fg="black",
+            font=("Arial", 11),
+        )
+        self.reset_battery_button.pack(side=tk.LEFT, padx=5)
+
         # Enable logging checkbox for sensor test
         self.enable_sensor_logging_var = tk.BooleanVar(value=False)
         self.enable_sensor_logging_check = tk.Checkbutton(
@@ -2420,14 +2431,30 @@ class DeadReckoningGUI:
                 text="Sensor Test", command=self.start_sensor_test, bg="lightblue"
             )
 
+    def reset_battery(self):
+        """Reset battery voltage reading to allow new flights with fresh batteries"""
+        global current_battery_voltage, battery_data_ready
+        current_battery_voltage = 0.0
+        battery_data_ready = False
+        self.battery_var.set("Battery: RESET - Waiting for new reading")
+        self.status_var.set(
+            "Status: Battery voltage reset. New reading will update shortly."
+        )
+        print("Battery voltage reset to 0.0V")
+
     def sensor_test_controller_thread(self):  # New thread function for sensor test
         """Sensor test controller running in separate thread"""
         global flight_phase, sensor_test_active, scf_instance
         global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time
         global position_integration_enabled  # Need to access this to enable integration
+        global current_battery_voltage, battery_data_ready  # Reset battery on new connection
 
         sensor_test_active = True
         flight_phase = "SENSOR_TEST"  # Update phase
+
+        # Reset battery voltage for new connection
+        current_battery_voltage = 0.0
+        battery_data_ready = False
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
@@ -2595,11 +2622,16 @@ class DeadReckoningGUI:
         global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time
         global maneuver_active, target_position_x, target_position_y
         global shape_active, shape_waypoints, shape_index
+        global current_battery_voltage, battery_data_ready  # Reset battery on new connection
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
         log_motion = None
         log_battery = None
+
+        # Reset battery voltage for new connection
+        current_battery_voltage = 0.0
+        battery_data_ready = False
 
         try:
             flight_phase = "CONNECTING"
@@ -2862,11 +2894,16 @@ class DeadReckoningGUI:
     def joystick_control_thread(self):
         """Joystick control thread that handles position updates"""
         global target_position_x, target_position_y, maneuver_active, flight_active
+        global current_battery_voltage, battery_data_ready  # Reset battery on new connection
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
         log_motion = None
         log_battery = None
+
+        # Reset battery voltage for new connection
+        current_battery_voltage = 0.0
+        battery_data_ready = False
 
         try:
             with SyncCrazyflie(DRONE_URI, cf=cf) as scf:
