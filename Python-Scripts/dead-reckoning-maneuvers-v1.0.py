@@ -80,6 +80,9 @@ WAYPOINT_TIMEOUT = 10.0  # Timeout in seconds before advancing to next waypoint 
 CORNER_PAUSE_DURATION = 0.3  # Pause duration at corners for stabilization (seconds)
 MIN_VELOCITY_THRESHOLD = 0.002  # Minimum velocity to consider stopped at waypoint
 
+# === OUTPUT WINDOW LOG ===
+Output_Window = True  # Set to True to enable output log window, False to disable
+
 # === GLOBAL VARIABLES ===
 # Sensor data
 current_height = 0.0
@@ -650,8 +653,9 @@ def setup_logging(cf):
         return log_motion, log_battery
 
     except Exception as e:
-        print(f"Logging setup failed: {e}")
-        return None, None
+        error_msg = f"Logging setup failed: {str(e)}"
+        print(error_msg)
+        raise Exception(error_msg)
 
 
 def init_csv_logging():
@@ -727,6 +731,9 @@ class DeadReckoningGUI:
             "s": False,
             "d": False,
         }  # Joystick key states
+
+        # Output window visibility control
+        self.show_output_window = Output_Window  # Boolean to enable/disable output window
 
         self.create_ui()
         self.setup_plots()
@@ -805,6 +812,16 @@ class DeadReckoningGUI:
             variable=self.enable_sensor_logging_var,
         )
         self.enable_sensor_logging_check.pack(side=tk.LEFT, padx=(10, 0))
+
+        # Show output window checkbox
+        self.show_output_window_var = tk.BooleanVar(value=self.show_output_window)
+        self.show_output_window_check = tk.Checkbutton(
+            control_frame,
+            text="Show Output Window",
+            variable=self.show_output_window_var,
+            command=self.toggle_output_window,
+        )
+        self.show_output_window_check.pack(side=tk.LEFT, padx=(10, 0))
 
         # Blink NeoPixel button - New button
         self.blink_button = tk.Button(
@@ -1170,6 +1187,7 @@ class DeadReckoningGUI:
         try:
             distance = float(self.maneuver_distance_var.get())
             self.start_maneuver(0.0, distance)
+            self.log_to_output(f"Maneuver initiated: Forward {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1178,6 +1196,7 @@ class DeadReckoningGUI:
         try:
             distance = float(self.maneuver_distance_var.get())
             self.start_maneuver(0.0, -distance)
+            self.log_to_output(f"Maneuver initiated: Backward {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1186,6 +1205,7 @@ class DeadReckoningGUI:
         try:
             distance = float(self.maneuver_distance_var.get())
             self.start_maneuver(distance, 0.0)
+            self.log_to_output(f"Maneuver initiated: Left {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1194,6 +1214,7 @@ class DeadReckoningGUI:
         try:
             distance = float(self.maneuver_distance_var.get())
             self.start_maneuver(-distance, 0.0)
+            self.log_to_output(f"Maneuver initiated: Right {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1205,6 +1226,7 @@ class DeadReckoningGUI:
         target_position_x = integrated_position_x
         target_position_y = integrated_position_y
         print("Maneuver and flight stopped")
+        self.log_to_output("Maneuver stopped")
 
     def maneuver_square(self):
         """Execute square maneuver"""
@@ -1212,6 +1234,7 @@ class DeadReckoningGUI:
             distance = float(self.maneuver_distance_var.get())
             waypoints = self.calculate_square_waypoints(distance)
             self.start_shape_maneuver(waypoints)
+            self.log_to_output(f"Square maneuver initiated: {distance:.2f}m sides")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1274,6 +1297,9 @@ class DeadReckoningGUI:
             self.flight_thread = threading.Thread(target=self.flight_controller_thread)
             self.flight_thread.daemon = True
             self.flight_thread.start()
+
+            # Log to output window
+            self.log_to_output(f"Shape maneuver started: {len(waypoints)} waypoints")
         elif self.sensor_test_running:
             print("Cannot start Shape Maneuver while Sensor Test is active.")
             self.status_var.set(
@@ -1325,14 +1351,25 @@ class DeadReckoningGUI:
             self.flight_thread = threading.Thread(target=self.flight_controller_thread)
             self.flight_thread.daemon = True
             self.flight_thread.start()
+
+            # Log to output window
+            self.log_to_output(f"Maneuver started: ({delta_x:.2f}, {delta_y:.2f})")
         elif self.sensor_test_running:
             print("Cannot start Maneuver while Sensor Test is active.")
             self.status_var.set("Status: Sensor Test Active - Cannot Start Maneuver")
 
     def create_value_displays(self, parent):
         """Create real-time value display widgets"""
+        # Main container with left and right columns
+        main_container = tk.Frame(parent)
+        main_container.pack(fill=tk.BOTH, expand=True)
+
+        # Left column - Value displays
+        left_column = tk.Frame(main_container)
+        left_column.pack(side=tk.LEFT, fill=tk.Y, expand=True)
+
         # Row 1: Basic values
-        row1 = tk.Frame(parent)
+        row1 = tk.Frame(left_column)
         row1.pack(fill=tk.X, pady=2)
         self.height_var = tk.StringVar(value="Height: 0.000m")
         self.phase_var = tk.StringVar(value="Phase: IDLE")
@@ -1348,7 +1385,7 @@ class DeadReckoningGUI:
         ).pack(side=tk.LEFT, padx=20)
 
         # Row 2: Velocities
-        row2 = tk.Frame(parent)
+        row2 = tk.Frame(left_column)
         row2.pack(fill=tk.X, pady=2)
         self.vx_var = tk.StringVar(value="VX: 0.000 m/s")
         self.vy_var = tk.StringVar(value="VY: 0.000 m/s")
@@ -1360,7 +1397,7 @@ class DeadReckoningGUI:
         )
 
         # Row 3: Integrated positions
-        row3 = tk.Frame(parent)
+        row3 = tk.Frame(left_column)
         row3.pack(fill=tk.X, pady=2)
         self.pos_x_var = tk.StringVar(value="Position X: 0.000m")
         self.pos_y_var = tk.StringVar(value="Position Y: 0.000m")
@@ -1378,7 +1415,7 @@ class DeadReckoningGUI:
         ).pack(side=tk.LEFT, padx=20)
 
         # Row 4: Control corrections
-        row4 = tk.Frame(parent)
+        row4 = tk.Frame(left_column)
         row4.pack(fill=tk.X, pady=2)
         self.corr_vx_var = tk.StringVar(value="Correction VX: 0.000")
         self.corr_vy_var = tk.StringVar(value="Correction VY: 0.000")
@@ -1390,7 +1427,7 @@ class DeadReckoningGUI:
         ).pack(side=tk.LEFT, padx=20)
 
         # Control buttons row
-        button_row = tk.Frame(parent)
+        button_row = tk.Frame(left_column)
         button_row.pack(fill=tk.X, pady=10)
 
         self.apply_all_button = tk.Button(
@@ -1422,6 +1459,52 @@ class DeadReckoningGUI:
             font=("Arial", 10),
         )
         self.clear_graphs_button.pack(side=tk.LEFT, padx=5)
+
+        # Right column - Output window (only if enabled)
+        if self.show_output_window:
+            right_column = tk.Frame(main_container)
+            right_column.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
+
+            # Output window label
+            output_label = tk.Label(
+                right_column, text="Output Log", font=("Arial", 10, "bold")
+            )
+            output_label.pack(anchor=tk.W, pady=(0, 5))
+
+            # Output text widget with scrollbar
+            output_frame = tk.Frame(right_column)
+            output_frame.pack(fill=tk.BOTH, expand=True)
+
+            self.output_text = tk.Text(
+                output_frame,
+                height=8,
+                width=40,
+                font=("Courier", 9),
+                bg="white",
+                fg="green",
+                wrap=tk.WORD,
+            )
+            output_scrollbar = tk.Scrollbar(
+                output_frame, command=self.output_text.yview
+            )
+            self.output_text.config(yscrollcommand=output_scrollbar.set)
+
+            self.output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+            # Clear output button
+            clear_output_button = tk.Button(
+                right_column,
+                text="Clear Output",
+                command=self.clear_output,
+                bg="gray",
+                fg="black",
+                font=("Arial", 9),
+            )
+            clear_output_button.pack(anchor=tk.W, pady=(5, 0))
+        else:
+            # If output window is disabled, set output_text to None
+            self.output_text = None
 
     # --- NEW FUNCTION: create_runtime_controls ---
     def create_runtime_controls(self, parent):
@@ -1635,6 +1718,7 @@ class DeadReckoningGUI:
         except Exception as e:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel error: {e}")
+            self.log_to_output(f"NeoPixel Error: {str(e)}")
 
     def set_static_mode(self):
         """Make the current LED color static (stop blinking but keep color)."""
@@ -1679,6 +1763,7 @@ class DeadReckoningGUI:
         except Exception as e:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel error: {e}")
+            self.log_to_output(f"NeoPixel Error: {str(e)}")
 
     def set_leds_color(self, r, g, b):
         """Set a stable color on the NeoPixels (stops blinking first)."""
@@ -1725,6 +1810,7 @@ class DeadReckoningGUI:
         except Exception as e:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel set color error: {e}")
+            self.log_to_output(f"NeoPixel Error: {str(e)}")
 
     def set_color_from_ui(self):
         """Read R,G,B from UI controls and set LEDs accordingly."""
@@ -1770,6 +1856,7 @@ class DeadReckoningGUI:
         except Exception as e:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel clear error: {e}")
+            self.log_to_output(f"NeoPixel Error: {str(e)}")
 
     def low_battery_blink_start(self):
         """Start blinking red LEDs for low battery alert"""
@@ -1800,6 +1887,7 @@ class DeadReckoningGUI:
             except Exception as e:
                 self.status_var.set(f"Status: NeoPixel error - {str(e)}")
                 print(f"NeoPixel low battery blink error: {e}")
+                self.log_to_output(f"NeoPixel Error: {str(e)}")
 
     def low_battery_blink_stop(self):
         """Stop low battery blinking and clear LEDs"""
@@ -1829,6 +1917,7 @@ class DeadReckoningGUI:
             except Exception as e:
                 self.status_var.set(f"Status: NeoPixel error - {str(e)}")
                 print(f"NeoPixel low battery stop error: {e}")
+                self.log_to_output(f"NeoPixel Error: {str(e)}")
 
     def create_pid_controls(self, parent):
         """Create PID tuning input controls with TRIM controls - compact layout"""
@@ -2225,6 +2314,9 @@ class DeadReckoningGUI:
             print(f"  Reset Interval: {PERIODIC_RESET_INTERVAL}")
             print(f"  Max Position Error: {MAX_POSITION_ERROR}")
 
+            # Log to output window
+            self.log_to_output("Runtime values applied successfully")
+
         except ValueError as e:
             print(f"Error applying runtime values: {e}")
             print("Please enter valid numbers for all runtime parameters.")
@@ -2258,6 +2350,9 @@ class DeadReckoningGUI:
             print(f"PID Values Applied:")
             print(f"Position: Kp={POSITION_KP}, Ki={POSITION_KI}, Kd={POSITION_KD}")
             print(f"Velocity: Kp={VELOCITY_KP}, Ki={VELOCITY_KI}, Kd={VELOCITY_KD}")
+
+            # Log to output window
+            self.log_to_output("PID values applied successfully")
         except ValueError as e:
             print(f"Error applying PID values: {e}")
             print("Please enter valid numbers")
@@ -2358,11 +2453,34 @@ class DeadReckoningGUI:
         JOYSTICK_SENSITIVITY = 0.5
         print("All values reset to default")
 
+    def toggle_output_window(self):
+        """Toggle the output window visibility"""
+        self.show_output_window = self.show_output_window_var.get()
+        # Show message that change will take effect on restart
+        self.status_var.set("Status: Output window setting changed - restart required")
+        self.log_to_output(
+            "Output window visibility changed - restart the application to apply"
+        )
+
+    def clear_output(self):
+        """Clear the output log window"""
+        if hasattr(self, "output_text") and self.output_text is not None:
+            self.output_text.delete(1.0, tk.END)
+            self.log_to_output("Output window cleared")
+
+    def log_to_output(self, message):
+        """Log a message to the output window"""
+        if hasattr(self, "output_text") and self.output_text is not None:
+            timestamp = time.strftime("%H:%M:%S")
+            self.output_text.insert(tk.END, f"[{timestamp}] {message}\n")
+            self.output_text.see(tk.END)  # Auto-scroll to bottom
+
     def clear_graphs(self):
         """Clear all graph data and reset plotting"""
         global time_history, velocity_x_history_plot, velocity_y_history_plot
         global position_x_history, position_y_history, correction_vx_history, correction_vy_history
         global height_history, complete_trajectory_x, complete_trajectory_y, start_time
+
         # Clear all history arrays
         time_history.clear()
         velocity_x_history_plot.clear()
@@ -2374,26 +2492,29 @@ class DeadReckoningGUI:
         height_history.clear()
         complete_trajectory_x.clear()
         complete_trajectory_y.clear()
+
         # Reset start time
         start_time = None
+
         # Clear plot lines
-        self.line_vx.set_data([], [])
-        self.line_vy.set_data([], [])
-        self.line_pos.set_data([], [])
-        self.current_pos.set_data([], [])
-        self.line_corr_vx.set_data([], [])
-        self.line_corr_vy.set_data([], [])
-        self.line_height.set_data([], [])
-        # Reset plot axes to default ranges
-        self.ax1.set_xlim(0, 10)
-        self.ax1.set_ylim(-0.1, 0.1)
-        self.ax2.set_xlim(-0.05, 0.05)
-        self.ax2.set_ylim(-0.05, 0.05)
-        self.ax3.set_xlim(0, 10)
-        self.ax3.set_ylim(-0.1, 0.1)
-        self.ax4.set_xlim(0, 10)
-        self.ax4.set_ylim(0.2, 0.4)
-        print("All graphs cleared")
+        if hasattr(self, "line_vx"):
+            self.line_vx.set_data([], [])
+        if hasattr(self, "line_vy"):
+            self.line_vy.set_data([], [])
+        if hasattr(self, "line_pos"):
+            self.line_pos.set_data([], [])
+        if hasattr(self, "line_corr_vx"):
+            self.line_corr_vx.set_data([], [])
+        if hasattr(self, "line_corr_vy"):
+            self.line_corr_vy.set_data([], [])
+        if hasattr(self, "line_height"):
+            self.line_height.set_data([], [])
+
+        # Redraw the plots
+        if hasattr(self, "canvas"):
+            self.canvas.draw()
+
+        self.log_to_output("Graphs cleared")
 
     def start_sensor_test(self):  # New function for sensor test
         """Start the sensor test in a separate thread"""
@@ -2521,6 +2642,7 @@ class DeadReckoningGUI:
                         log_to_csv()
         except Exception as e:
             flight_phase = f"ERROR: {str(e)}"
+            self.log_to_output(f"Sensor Test Error: {str(e)}")
         finally:
             # Stop logging
             if self.enable_sensor_logging_var.get():
@@ -2596,6 +2718,9 @@ class DeadReckoningGUI:
             self.flight_thread = threading.Thread(target=self.flight_controller_thread)
             self.flight_thread.daemon = True
             self.flight_thread.start()
+
+            # Log to output window
+            self.log_to_output("Flight started")
         elif self.sensor_test_running:
             print("Cannot start Flight while Sensor Test is active.")
             self.status_var.set("Status: Sensor Test Active - Cannot Start Flight")
@@ -2868,6 +2993,7 @@ class DeadReckoningGUI:
 
         except Exception as e:
             flight_phase = f"ERROR: {str(e)}"
+            self.log_to_output(f"Flight Error: {str(e)}")
         finally:
             # Stop logging
             close_csv_logging()
@@ -2938,6 +3064,9 @@ class DeadReckoningGUI:
                     "Status: Joystick Control Starting - Stabilizing height first..."
                 )
 
+                # Log to output window
+                self.log_to_output("Joystick control started")
+
                 # Initialize joystick target position to current position
                 global target_position_x, target_position_y, maneuver_active
                 target_position_x = integrated_position_x
@@ -2979,6 +3108,9 @@ class DeadReckoningGUI:
             # self.stop_joystick_button.config(state=tk.DISABLED)  # Removed duplicate stop button
             self.joystick_status_var.set("Joystick: INACTIVE")
             self.status_var.set("Status: Joystick Control Stopped")
+
+            # Log to output window
+            self.log_to_output("Joystick control stopped")
 
     def joystick_control_thread(self):
         """Joystick control thread that handles position updates"""
@@ -3125,6 +3257,7 @@ class DeadReckoningGUI:
 
         except Exception as e:
             flight_phase = f"JOYSTICK_ERROR: {str(e)}"
+            self.log_to_output(f"Joystick Error: {str(e)}")
         finally:
             # Stop logging
             close_csv_logging()
@@ -3172,6 +3305,9 @@ class DeadReckoningGUI:
             else:
                 self.joystick_status_var.set("Joystick: ACTIVE")
 
+            # Log key press to output window
+            self.log_to_output(f"Joystick key pressed: {key.upper()}")
+
     def on_key_release(self, event):
         """Handle key release events for joystick control"""
         if not self.joystick_active:
@@ -3189,6 +3325,9 @@ class DeadReckoningGUI:
             else:
                 self.joystick_status_var.set("Joystick: ACTIVE")
 
+            # Log key release to output window
+            self.log_to_output(f"Joystick key released: {key.upper()}")
+
     def simulate_key_press(self, key):
         """Simulate a key press for joystick control (used by GUI buttons)"""
         if not self.joystick_active:
@@ -3203,6 +3342,9 @@ class DeadReckoningGUI:
             self.joystick_status_var.set(f"Joystick: ACTIVE ({','.join(active_keys)})")
             # Schedule key release after a short delay (200ms)
             self.root.after(200, lambda: self.simulate_key_release(key))
+
+            # Log simulated key press to output window
+            self.log_to_output(f"Joystick button pressed: {key.upper()}")
 
     def simulate_key_release(self, key):
         """Simulate a key release for joystick control"""
@@ -3220,6 +3362,9 @@ class DeadReckoningGUI:
                 )
             else:
                 self.joystick_status_var.set("Joystick: ACTIVE")
+
+            # Log simulated key release to output window
+            self.log_to_output(f"Joystick button released: {key.upper()}")
 
 
 def main():
