@@ -148,6 +148,8 @@ complete_trajectory_x = []
 complete_trajectory_y = []
 start_time = None
 neo_controller = None
+# Debug counter for motion callback
+debug_counter = 0
 
 
 # === HELPER FUNCTIONS ===
@@ -523,6 +525,7 @@ def motion_callback(timestamp, data, logconf):
     """Motion sensor data callback"""
     global current_height, motion_delta_x, motion_delta_y, sensor_data_ready
     global current_vx, current_vy, last_integration_time
+    global debug_counter
 
     # Get sensor data
     current_height = data.get("stateEstimate.z", 0)
@@ -548,7 +551,7 @@ def motion_callback(timestamp, data, logconf):
         if not sensor_data_ready:
             sensor_data_ready = False
         # Log invalid data for debugging
-        if motion_callback.debug_counter % 50 == 0:  # Less frequent logging
+        if debug_counter % 50 == 0:  # Less frequent logging
             print(
                 f"Invalid sensor data - Height: {current_height:.3f} (valid: {height_valid}), "
                 f"Motion: X={motion_delta_x}, Y={motion_delta_y} (valid: {motion_valid})"
@@ -559,12 +562,9 @@ def motion_callback(timestamp, data, logconf):
     raw_velocity_y = calculate_velocity(motion_delta_y, current_height)
 
     # Debug output every 100 callbacks (reduce console spam)
-    if hasattr(motion_callback, "debug_counter"):
-        motion_callback.debug_counter += 1
-    else:
-        motion_callback.debug_counter = 0
+    debug_counter += 1
     if (
-        motion_callback.debug_counter % 100 == 0
+        debug_counter % 100 == 0
         and sensor_data_ready
         and (abs(motion_delta_x) > 0 or abs(motion_delta_y) > 0)
     ):
