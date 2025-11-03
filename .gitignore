@@ -34,3 +34,6 @@ __pycache__/
 # cache folders
 Python-Scripts/cache/
 cache/
+
+# workspace settings
+*.code-workspace
