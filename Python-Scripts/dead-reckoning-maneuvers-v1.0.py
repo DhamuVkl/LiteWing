@@ -1876,7 +1876,7 @@ class DeadReckoningGUI:
         # Velocity Ki
         tk.Label(vel_row, text="Ki:", width=3).pack(side=tk.LEFT, padx=(5, 0))
         self.vel_ki_var = tk.StringVar(value=str(VELOCITY_KI))
-        self.vel_ki_entry = tk.Entry(vel_row, textvariable=self.vel_kp_var, width=6)
+        self.vel_ki_entry = tk.Entry(vel_row, textvariable=self.vel_ki_var, width=6)
         self.vel_ki_entry.pack(side=tk.LEFT, padx=2)
         # Velocity Kd
         tk.Label(vel_row, text="Kd:", width=3).pack(side=tk.LEFT, padx=(5, 0))
