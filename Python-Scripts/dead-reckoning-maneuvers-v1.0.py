@@ -309,8 +309,8 @@ def _try_send_with_retries(cf, fn, *args, retries=NP_SEND_RETRIES):
 
 def calculate_velocity(delta_value, altitude):
     """Convert optical flow delta to linear velocity"""
-    if altitude <= 0 or altitude > 5.0:  # Invalid height check
-        return 0.0  # Return zero velocity for invalid height
+    if altitude <= 0:
+        return 0.0
     if USE_HEIGHT_SCALING:
         # Original height-dependent calculation
         velocity_constant = (5.4 * DEG_TO_RAD) / (30.0 * DT)
@@ -531,42 +531,16 @@ def motion_callback(timestamp, data, logconf):
     current_height = data.get("stateEstimate.z", 0)
     motion_delta_x = data.get("motion.deltaX", 0)
     motion_delta_y = data.get("motion.deltaY", 0)
+    sensor_data_ready = True
 
-    # Validate sensor data before marking as ready
-    # Check for reasonable height (positive and not too high)
-    height_valid = 0.01 <= current_height <= 5.0  # 1cm to 5m range
-
-    # Check for reasonable motion deltas (not extreme values that indicate sensor errors)
-    motion_valid = (
-        abs(motion_delta_x) <= 1000  # Reasonable range for optical flow deltas
-        and abs(motion_delta_y) <= 1000
-    )
-
-    # Only mark sensor data as ready if both height and motion data are valid
-    if height_valid and motion_valid:
-        sensor_data_ready = True
-    else:
-        # Keep previous sensor_data_ready state if data is invalid
-        # This prevents dropping to "not ready" on single bad readings
-        if not sensor_data_ready:
-            sensor_data_ready = False
-        # Log invalid data for debugging
-        if debug_counter % 50 == 0:  # Less frequent logging
-            print(
-                f"Invalid sensor data - Height: {current_height:.3f} (valid: {height_valid}), "
-                f"Motion: X={motion_delta_x}, Y={motion_delta_y} (valid: {motion_valid})"
-            )
-
-    # Calculate velocities even with potentially invalid data (they will be filtered later)
+    # Calculate velocities
     raw_velocity_x = calculate_velocity(motion_delta_x, current_height)
     raw_velocity_y = calculate_velocity(motion_delta_y, current_height)
 
     # Debug output every 100 callbacks (reduce console spam)
     debug_counter += 1
-    if (
-        debug_counter % 100 == 0
-        and sensor_data_ready
-        and (abs(motion_delta_x) > 0 or abs(motion_delta_y) > 0)
+    if debug_counter % 100 == 0 and (
+        abs(motion_delta_x) > 0 or abs(motion_delta_y) > 0
     ):
         print(
             f"Sensor Debug - Height: {current_height:.3f}m, "
