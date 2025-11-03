@@ -3217,6 +3217,11 @@ class DeadReckoningGUI:
         """Joystick control thread that handles position updates"""
         global target_position_x, target_position_y, maneuver_active, flight_active
         global current_battery_voltage, battery_data_ready  # Reset battery on new connection
+        global integrated_position_x, integrated_position_y  # Need access to current position
+        global last_integration_time, last_reset_time  # Need to reset integration timing
+        global position_integration_enabled  # Control position integration
+        global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
+        global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
@@ -3251,7 +3256,6 @@ class DeadReckoningGUI:
 
                 # Takeoff
                 flight_phase = "JOYSTICK_TAKEOFF"
-                global position_integration_enabled
                 position_integration_enabled = False
                 start_time = time.time()
                 init_csv_logging()
@@ -3272,8 +3276,6 @@ class DeadReckoningGUI:
                 position_integration_enabled = True
 
                 # Reset PID state
-                global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
-                global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
                 position_integral_x = 0.0
                 position_integral_y = 0.0
                 velocity_integral_x = 0.0
@@ -3309,12 +3311,6 @@ class DeadReckoningGUI:
                 flight_phase = "JOYSTICK_CONTROL"
 
                 while self.joystick_active:
-                    # Update target position to current position for joystick control
-                    # This ensures that when keys are released, drone stays at current position
-                    global target_position_x, target_position_y
-                    target_position_x = integrated_position_x
-                    target_position_y = integrated_position_y
-
                     # Calculate direct velocity commands based on pressed keys
                     sensitivity = float(self.joystick_sensitivity_var.get())
                     joystick_vx = 0.0
@@ -3329,18 +3325,34 @@ class DeadReckoningGUI:
                     if self.joystick_keys["d"]:  # Right (negative X - corrected)
                         joystick_vx -= sensitivity
 
+                    # Check if any keys are pressed
+                    any_keys_pressed = any(self.joystick_keys.values())
+
                     # For joystick control, we use direct velocity commands
                     # Only apply position hold corrections if no keys are pressed (for stability)
-                    if (
-                        use_position_hold
-                        and sensor_data_ready
-                        and not any(self.joystick_keys.values())
-                    ):
+                    if use_position_hold and sensor_data_ready and not any_keys_pressed:
                         # Only apply position corrections when no joystick input (for stability)
                         motion_vx, motion_vy = calculate_position_hold_corrections()
                     else:
                         # Use direct joystick velocity when keys are pressed
                         motion_vx, motion_vy = joystick_vx, joystick_vy
+
+                        # Update target position to current position while moving
+                        # This prevents drone from returning to origin when keys are released
+                        target_position_x = integrated_position_x
+                        target_position_y = integrated_position_y
+
+                        # Debug logging every 50 iterations to verify position update
+                        if hasattr(self, "_joystick_debug_counter"):
+                            self._joystick_debug_counter += 1
+                        else:
+                            self._joystick_debug_counter = 0
+
+                        if self._joystick_debug_counter % 50 == 0:
+                            self.log_to_output(
+                                f"Joystick: target=({target_position_x:.3f}, {target_position_y:.3f}), "
+                                f"current=({integrated_position_x:.3f}, {integrated_position_y:.3f})"
+                            )
 
                     log_to_csv()
 
