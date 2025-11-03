@@ -733,7 +733,15 @@ class DeadReckoningGUI:
         }  # Joystick key states
 
         # Output window visibility control
-        self.show_output_window = Output_Window  # Boolean to enable/disable output window
+        self.show_output_window = True  # Boolean to enable/disable output window
+
+        # Track which keys are currently pressed to prevent duplicate logging
+        self.key_pressed_flags = {
+            "w": False,
+            "a": False,
+            "s": False,
+            "d": False,
+        }
 
         self.create_ui()
         self.setup_plots()
@@ -1097,7 +1105,6 @@ class DeadReckoningGUI:
         self.joystick_forward_button = tk.Button(
             joystick_buttons_frame,
             text="↑\nW",
-            command=lambda: self.simulate_key_press("w"),
             bg="green",
             fg="white",
             font=("Arial", 9),
@@ -1105,12 +1112,17 @@ class DeadReckoningGUI:
             height=2,
         )
         self.joystick_forward_button.grid(row=0, column=1, padx=2, pady=2)
+        self.joystick_forward_button.bind(
+            "<ButtonPress>", lambda e: self.start_continuous_movement("w")
+        )
+        self.joystick_forward_button.bind(
+            "<ButtonRelease>", lambda e: self.stop_continuous_movement("w")
+        )
 
         # Left button (middle left) - smaller
         self.joystick_left_button = tk.Button(
             joystick_buttons_frame,
             text="←\nA",
-            command=lambda: self.simulate_key_press("a"),
             bg="green",
             fg="white",
             font=("Arial", 9),
@@ -1118,6 +1130,12 @@ class DeadReckoningGUI:
             height=2,
         )
         self.joystick_left_button.grid(row=1, column=0, padx=2, pady=2)
+        self.joystick_left_button.bind(
+            "<ButtonPress>", lambda e: self.start_continuous_movement("a")
+        )
+        self.joystick_left_button.bind(
+            "<ButtonRelease>", lambda e: self.stop_continuous_movement("a")
+        )
 
         # Stop button (center) - smaller
         self.joystick_stop_button = tk.Button(
@@ -1136,7 +1154,6 @@ class DeadReckoningGUI:
         self.joystick_right_button = tk.Button(
             joystick_buttons_frame,
             text="→\nD",
-            command=lambda: self.simulate_key_press("d"),
             bg="green",
             fg="white",
             font=("Arial", 9),
@@ -1144,12 +1161,17 @@ class DeadReckoningGUI:
             height=2,
         )
         self.joystick_right_button.grid(row=1, column=2, padx=2, pady=2)
+        self.joystick_right_button.bind(
+            "<ButtonPress>", lambda e: self.start_continuous_movement("d")
+        )
+        self.joystick_right_button.bind(
+            "<ButtonRelease>", lambda e: self.stop_continuous_movement("d")
+        )
 
         # Backward button (bottom center) - smaller
         self.joystick_backward_button = tk.Button(
             joystick_buttons_frame,
             text="↓\nS",
-            command=lambda: self.simulate_key_press("s"),
             bg="green",
             fg="white",
             font=("Arial", 9),
@@ -1157,6 +1179,12 @@ class DeadReckoningGUI:
             height=2,
         )
         self.joystick_backward_button.grid(row=2, column=1, padx=2, pady=2)
+        self.joystick_backward_button.bind(
+            "<ButtonPress>", lambda e: self.start_continuous_movement("s")
+        )
+        self.joystick_backward_button.bind(
+            "<ButtonRelease>", lambda e: self.stop_continuous_movement("s")
+        )
 
         # Joystick control buttons (centered start button only)
         control_buttons_frame = tk.Frame(joystick_control_frame)
@@ -2516,6 +2544,59 @@ class DeadReckoningGUI:
 
         self.log_to_output("Graphs cleared")
 
+    def start_continuous_movement(self, key):
+        """Start continuous movement for GUI buttons"""
+        if not self.joystick_active:
+            return
+
+        key = key.lower()
+        if key in ["w", "a", "s", "d"]:
+            # Set joystick key for control thread
+            self.joystick_keys[key] = True
+
+            # Update status
+            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+            self.joystick_status_var.set(f"Joystick: ACTIVE ({','.join(active_keys)})")
+
+            # Log button press
+            self.log_to_output(
+                f"Continuous movement: {self._key_to_direction(key)} started"
+            )
+
+    def stop_continuous_movement(self, key):
+        """Stop continuous movement for GUI buttons"""
+        if not self.joystick_active:
+            return
+
+        key = key.lower()
+        if key in ["w", "a", "s", "d"]:
+            # Clear joystick key for control thread
+            self.joystick_keys[key] = False
+
+            # Update status
+            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+            if active_keys:
+                self.joystick_status_var.set(
+                    f"Joystick: ACTIVE ({','.join(active_keys)})"
+                )
+            else:
+                self.joystick_status_var.set("Joystick: ACTIVE")
+
+            # Log button release
+            self.log_to_output(
+                f"Continuous movement: {self._key_to_direction(key)} stopped"
+            )
+
+    def _key_to_direction(self, key):
+        """Convert key to direction name"""
+        directions = {
+            "w": "Forward (W)",
+            "a": "Left (A)",
+            "s": "Backward (S)",
+            "d": "Right (D)",
+        }
+        return directions.get(key, key.upper())
+
     def start_sensor_test(self):  # New function for sensor test
         """Start the sensor test in a separate thread"""
         if (
@@ -2738,6 +2819,26 @@ class DeadReckoningGUI:
         self.sensor_test_button.config(
             text="Sensor Test", command=self.start_sensor_test, bg="lightblue"
         )
+
+        # Also stop joystick control if active
+        if self.joystick_active:
+            self.joystick_active = False
+            global maneuver_active
+            maneuver_active = False
+
+            # Clear all joystick keys
+            self.joystick_keys = {"w": False, "a": False, "s": False, "d": False}
+            self.key_pressed_flags = {"w": False, "a": False, "s": False, "d": False}
+
+            # Update joystick status
+            self.joystick_status_var.set("Joystick: EMERGENCY STOP")
+
+            # Update UI buttons
+            self.start_joystick_button.config(state=tk.NORMAL)
+
+            # Log joystick stop
+            self.log_to_output("Joystick control emergency stopped")
+
         self.status_var.set("Status: Emergency Stopped")
 
     def flight_controller_thread(self):
@@ -3208,32 +3309,44 @@ class DeadReckoningGUI:
                 flight_phase = "JOYSTICK_CONTROL"
 
                 while self.joystick_active:
-                    # Update target position based on pressed keys
+                    # Update target position to current position for joystick control
+                    # This ensures that when keys are released, drone stays at current position
+                    global target_position_x, target_position_y
+                    target_position_x = integrated_position_x
+                    target_position_y = integrated_position_y
+
+                    # Calculate direct velocity commands based on pressed keys
                     sensitivity = float(self.joystick_sensitivity_var.get())
-                    move_step = (
-                        0.02 * sensitivity
-                    )  # Increased for better responsiveness
+                    joystick_vx = 0.0
+                    joystick_vy = 0.0
 
-                    if self.joystick_keys["w"]:  # Forward
-                        target_position_y += move_step
-                    if self.joystick_keys["s"]:  # Backward
-                        target_position_y -= move_step
-                    if self.joystick_keys["a"]:  # Left
-                        target_position_x -= move_step
-                    if self.joystick_keys["d"]:  # Right
-                        target_position_x += move_step
+                    if self.joystick_keys["w"]:  # Forward (positive Y)
+                        joystick_vy += sensitivity
+                    if self.joystick_keys["s"]:  # Backward (negative Y)
+                        joystick_vy -= sensitivity
+                    if self.joystick_keys["a"]:  # Left (positive X - corrected)
+                        joystick_vx += sensitivity
+                    if self.joystick_keys["d"]:  # Right (negative X - corrected)
+                        joystick_vx -= sensitivity
 
-                    # Calculate position corrections
-                    if use_position_hold and sensor_data_ready:
+                    # For joystick control, we use direct velocity commands
+                    # Only apply position hold corrections if no keys are pressed (for stability)
+                    if (
+                        use_position_hold
+                        and sensor_data_ready
+                        and not any(self.joystick_keys.values())
+                    ):
+                        # Only apply position corrections when no joystick input (for stability)
                         motion_vx, motion_vy = calculate_position_hold_corrections()
                     else:
-                        motion_vx, motion_vy = 0.0, 0.0
+                        # Use direct joystick velocity when keys are pressed
+                        motion_vx, motion_vy = joystick_vx, joystick_vy
 
                     log_to_csv()
 
-                    # Apply corrections
-                    total_vx = TRIM_VX + motion_vx
-                    total_vy = TRIM_VY + motion_vy
+                    # Apply corrections (note: axes swapped for Crazyflie coordinate system)
+                    total_vx = TRIM_VX + motion_vy  # joystick_vy becomes motion_vx
+                    total_vy = TRIM_VY + motion_vx  # joystick_vx becomes motion_vy
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(
                             total_vx, total_vy, 0, TARGET_HEIGHT
@@ -3290,23 +3403,42 @@ class DeadReckoningGUI:
 
     def on_key_press(self, event):
         """Handle key press events for joystick control"""
+        # Emergency stop with Enter key (works anytime)
+        if event.keysym in ("Return", "KP_Enter"):
+            self.emergency_stop()
+            self.log_to_output(
+                "EMERGENCY STOP: Enter key pressed - all systems stopped"
+            )
+            return
+
         if not self.joystick_active:
             return
 
         key = event.char.lower()
         if key in ["w", "a", "s", "d"]:
-            self.joystick_keys[key] = True
-            # Update joystick status to show active keys
-            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
-            if active_keys:
-                self.joystick_status_var.set(
-                    f"Joystick: ACTIVE ({','.join(active_keys)})"
+            # Only process if this is a new key press (not a repeat)
+            if not self.key_pressed_flags[key]:
+                self.key_pressed_flags[key] = True
+
+                # Update joystick keys for the control thread
+                self.joystick_keys[key] = True
+
+                # Update joystick status to show active keys
+                active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+                if active_keys:
+                    self.joystick_status_var.set(
+                        f"Joystick: ACTIVE ({','.join(active_keys)})"
+                    )
+                else:
+                    self.joystick_status_var.set("Joystick: ACTIVE")
+
+                # Log continuous movement start (only once per press)
+                self.log_to_output(
+                    f"Continuous movement: {self._key_to_direction(key)} started"
                 )
             else:
-                self.joystick_status_var.set("Joystick: ACTIVE")
-
-            # Log key press to output window
-            self.log_to_output(f"Joystick key pressed: {key.upper()}")
+                # Key is already pressed, just ensure joystick_keys is set
+                self.joystick_keys[key] = True
 
     def on_key_release(self, event):
         """Handle key release events for joystick control"""
@@ -3315,18 +3447,29 @@ class DeadReckoningGUI:
 
         key = event.char.lower()
         if key in ["w", "a", "s", "d"]:
-            self.joystick_keys[key] = False
-            # Update joystick status to show remaining active keys
-            active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
-            if active_keys:
-                self.joystick_status_var.set(
-                    f"Joystick: ACTIVE ({','.join(active_keys)})"
+            # Only process if this key was actually pressed
+            if self.key_pressed_flags[key]:
+                self.key_pressed_flags[key] = False
+
+                # Clear joystick keys for the control thread
+                self.joystick_keys[key] = False
+
+                # Update joystick status to show remaining active keys
+                active_keys = [k.upper() for k, v in self.joystick_keys.items() if v]
+                if active_keys:
+                    self.joystick_status_var.set(
+                        f"Joystick: ACTIVE ({','.join(active_keys)})"
+                    )
+                else:
+                    self.joystick_status_var.set("Joystick: ACTIVE")
+
+                # Log continuous movement stop (only once per release)
+                self.log_to_output(
+                    f"Continuous movement: {self._key_to_direction(key)} stopped"
                 )
             else:
-                self.joystick_status_var.set("Joystick: ACTIVE")
-
-            # Log key release to output window
-            self.log_to_output(f"Joystick key released: {key.upper()}")
+                # Key wasn't pressed, just ensure joystick_keys is cleared
+                self.joystick_keys[key] = False
 
     def simulate_key_press(self, key):
         """Simulate a key press for joystick control (used by GUI buttons)"""
