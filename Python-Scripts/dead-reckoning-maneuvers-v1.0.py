@@ -735,6 +735,11 @@ class DeadReckoningGUI:
         # Output window visibility control
         self.show_output_window = True  # Boolean to enable/disable output window
 
+        # Joystick position hold mode
+        self.joystick_hold_at_origin = (
+            False  # False = hold at current position, True = return to origin
+        )
+
         # Track which keys are currently pressed to prevent duplicate logging
         self.key_pressed_flags = {
             "w": False,
@@ -1178,6 +1183,22 @@ class DeadReckoningGUI:
             width=15,
         )
         self.start_joystick_button.pack(expand=True)
+
+        # Joystick position hold mode checkbox
+        position_hold_frame = tk.Frame(joystick_control_frame)
+        position_hold_frame.pack(fill=tk.X, pady=3)
+
+        self.joystick_hold_origin_var = tk.BooleanVar(
+            value=self.joystick_hold_at_origin
+        )
+        self.joystick_hold_origin_check = tk.Checkbutton(
+            position_hold_frame,
+            text="Hold at Origin (uncheck to hold at current position)",
+            variable=self.joystick_hold_origin_var,
+            command=self.toggle_joystick_hold_mode,
+            font=("Arial", 8),
+        )
+        self.joystick_hold_origin_check.pack()
 
         # Joystick status display (compact)
         self.joystick_status_var = tk.StringVar(value="Joystick: INACTIVE")
@@ -2560,10 +2581,20 @@ class DeadReckoningGUI:
             else:
                 self.joystick_status_var.set("Joystick: ACTIVE")
 
-            # Log button release
-            self.log_to_output(
-                f"Continuous movement: {self._key_to_direction(key)} stopped"
-            )
+            # Log button release with hold mode info when all keys released
+            if not any(self.joystick_keys.values()):
+                mode_info = (
+                    " - Returning to origin"
+                    if self.joystick_hold_at_origin
+                    else " - Holding current position"
+                )
+                self.log_to_output(
+                    f"Continuous movement: {self._key_to_direction(key)} stopped{mode_info}"
+                )
+            else:
+                self.log_to_output(
+                    f"Continuous movement: {self._key_to_direction(key)} stopped"
+                )
 
     def _key_to_direction(self, key):
         """Convert key to direction name"""
@@ -2574,6 +2605,20 @@ class DeadReckoningGUI:
             "d": "Right (D)",
         }
         return directions.get(key, key.upper())
+
+    def toggle_joystick_hold_mode(self):
+        """Toggle joystick position hold mode between origin and current position"""
+        self.joystick_hold_at_origin = self.joystick_hold_origin_var.get()
+
+        if self.joystick_hold_at_origin:
+            mode_text = "Origin mode: Drone will return to takeoff point when releasing joystick"
+        else:
+            mode_text = "Current position mode: Drone will hold at the position where joystick is released"
+
+        self.log_to_output(f"Joystick hold mode changed: {mode_text}")
+        print(
+            f"Joystick hold mode: {'Hold at Origin' if self.joystick_hold_at_origin else 'Hold at Current Position'}"
+        )
 
     def start_sensor_test(self):  # New function for sensor test
         """Start the sensor test in a separate thread"""
@@ -3144,10 +3189,24 @@ class DeadReckoningGUI:
                 # Log to output window
                 self.log_to_output("Joystick control started")
 
-                # Initialize joystick target position to current position
+                # Initialize joystick target position based on hold mode
                 global target_position_x, target_position_y, maneuver_active
-                target_position_x = integrated_position_x
-                target_position_y = integrated_position_y
+
+                if self.joystick_hold_at_origin:
+                    # Hold at Origin mode: Set target to origin (0, 0)
+                    target_position_x = 0.0
+                    target_position_y = 0.0
+                    self.log_to_output(
+                        "Joystick mode: Hold at Origin - will return to takeoff point when released"
+                    )
+                else:
+                    # Hold at Current Position mode: Set target to current position
+                    target_position_x = integrated_position_x
+                    target_position_y = integrated_position_y
+                    self.log_to_output(
+                        "Joystick mode: Hold at Current Position - will maintain position when released"
+                    )
+
                 maneuver_active = True  # Enable position hold
 
                 # Force focus to the window for key events
@@ -3313,10 +3372,17 @@ class DeadReckoningGUI:
                         # Use direct joystick velocity when keys are pressed
                         motion_vx, motion_vy = joystick_vx, joystick_vy
 
-                        # Update target position to current position while moving
-                        # This prevents drone from returning to origin when keys are released
-                        target_position_x = integrated_position_x
-                        target_position_y = integrated_position_y
+                        # Update target position based on hold mode
+                        if self.joystick_hold_at_origin:
+                            # Hold at Origin mode: Target always remains at (0, 0)
+                            # Drone will return to origin when keys are released
+                            target_position_x = 0.0
+                            target_position_y = 0.0
+                        else:
+                            # Hold at Current Position mode: Target follows current position
+                            # Drone will hold wherever it is when keys are released
+                            target_position_x = integrated_position_x
+                            target_position_y = integrated_position_y
 
                         # Debug logging every 50 iterations to verify position update
                         if hasattr(self, "_joystick_debug_counter"):
@@ -3325,8 +3391,11 @@ class DeadReckoningGUI:
                             self._joystick_debug_counter = 0
 
                         if self._joystick_debug_counter % 50 == 0:
+                            mode_text = (
+                                "Origin" if self.joystick_hold_at_origin else "Current"
+                            )
                             self.log_to_output(
-                                f"Joystick: target=({target_position_x:.3f}, {target_position_y:.3f}), "
+                                f"Joystick [{mode_text}]: target=({target_position_x:.3f}, {target_position_y:.3f}), "
                                 f"current=({integrated_position_x:.3f}, {integrated_position_y:.3f})"
                             )
 
@@ -3451,10 +3520,21 @@ class DeadReckoningGUI:
                 else:
                     self.joystick_status_var.set("Joystick: ACTIVE")
 
-                # Log continuous movement stop (only once per release)
-                self.log_to_output(
-                    f"Continuous movement: {self._key_to_direction(key)} stopped"
-                )
+                # Log continuous movement stop with hold mode info
+                # Only show hold mode info when all keys are released
+                if not any(self.joystick_keys.values()):
+                    mode_info = (
+                        " - Returning to origin"
+                        if self.joystick_hold_at_origin
+                        else " - Holding current position"
+                    )
+                    self.log_to_output(
+                        f"Continuous movement: {self._key_to_direction(key)} stopped{mode_info}"
+                    )
+                else:
+                    self.log_to_output(
+                        f"Continuous movement: {self._key_to_direction(key)} stopped"
+                    )
             else:
                 # Key wasn't pressed, just ensure joystick_keys is cleared
                 self.joystick_keys[key] = False
