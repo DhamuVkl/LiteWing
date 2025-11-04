@@ -37,3 +37,7 @@ cache/
 
 # workspace settings
 *.code-workspace
+
+# markdown files
+*.md
+*.md~
