@@ -821,16 +821,6 @@ class DeadReckoningGUI:
         )
         self.enable_sensor_logging_check.pack(side=tk.LEFT, padx=(10, 0))
 
-        # Show output window checkbox
-        self.show_output_window_var = tk.BooleanVar(value=self.show_output_window)
-        self.show_output_window_check = tk.Checkbutton(
-            control_frame,
-            text="Show Output Window",
-            variable=self.show_output_window_var,
-            command=self.toggle_output_window,
-        )
-        self.show_output_window_check.pack(side=tk.LEFT, padx=(10, 0))
-
         # Blink NeoPixel button - New button
         self.blink_button = tk.Button(
             control_frame,
@@ -842,18 +832,6 @@ class DeadReckoningGUI:
             font=("Arial", 12),
         )
         self.blink_button.pack(side=tk.LEFT, padx=10)
-
-        # Quick stable color controls
-        self.set_static_button = tk.Button(
-            control_frame,
-            text="Set Static",
-            command=self.set_static_mode,
-            bg="lightgrey",
-            state=tk.DISABLED,
-            fg="black",
-            font=("Arial", 11),
-        )
-        self.set_static_button.pack(side=tk.LEFT, padx=6)
 
         self.clear_leds_button = tk.Button(
             control_frame,
@@ -2665,7 +2643,6 @@ class DeadReckoningGUI:
                 # Enable NeoPixel controls now that a Crazyflie link is established
                 try:
                     self.blink_button.config(state=tk.NORMAL)
-                    self.set_static_button.config(state=tk.NORMAL)
                     self.clear_leds_button.config(state=tk.NORMAL)
                     self.set_color_button.config(state=tk.NORMAL)
                 except Exception:
@@ -2741,7 +2718,6 @@ class DeadReckoningGUI:
             # Disable NeoPixel controls when sensor test stops
             try:
                 self.blink_button.config(state=tk.DISABLED)
-                self.set_static_button.config(state=tk.DISABLED)
                 self.clear_leds_button.config(state=tk.DISABLED)
                 self.set_color_button.config(state=tk.DISABLED)
             except Exception:
