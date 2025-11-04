@@ -83,10 +83,10 @@ MIN_VELOCITY_THRESHOLD = 0.002  # Minimum velocity to consider stopped at waypoi
 # === JOYSTICK MOMENTUM COMPENSATION ===
 # When keys are released in "Hold at Current Position" mode, these parameters help prevent counter-movement
 MOMENTUM_COMPENSATION_TIME = (
-    0.08  # Seconds of velocity to predict stopping position (0.05-0.15 recommended)
+    0.10  # Seconds of velocity to predict stopping position (0.05-0.15 recommended)
 )
 SETTLING_DURATION = (
-    0.15  # Time to use gentler corrections after key release (0.1-0.3 seconds)
+    0.1  # Time to use gentler corrections after key release (0.1-0.3 seconds)
 )
 SETTLING_CORRECTION_FACTOR = (
     0.5  # Correction strength during settling period (0.3-0.7, lower = gentler)
@@ -3394,6 +3394,8 @@ class DeadReckoningGUI:
                         if not self.joystick_hold_at_origin:
                             # Predict where drone will be after momentum dissipates
                             # Use current velocity to estimate stopping position
+                            # Note: current_vx and current_vy are in sensor coordinates
+                            # Position integration also uses sensor coordinates, so they match
                             target_position_x = integrated_position_x + (
                                 current_vx * MOMENTUM_COMPENSATION_TIME
                             )
@@ -3402,8 +3404,9 @@ class DeadReckoningGUI:
                             )
 
                             self.log_to_output(
-                                f"Key released - Target set with momentum compensation: "
-                                f"({target_position_x:.3f}, {target_position_y:.3f})"
+                                f"Key released - Pos:({integrated_position_x:.3f},{integrated_position_y:.3f}) "
+                                f"Vel:({current_vx:.3f},{current_vy:.3f}) "
+                                f"Target:({target_position_x:.3f},{target_position_y:.3f})"
                             )
 
                     keys_were_pressed = any_keys_pressed
@@ -3423,9 +3426,33 @@ class DeadReckoningGUI:
                             # Reduce correction strength during settling
                             motion_vx *= SETTLING_CORRECTION_FACTOR
                             motion_vy *= SETTLING_CORRECTION_FACTOR
+
+                            # Debug logging during settling
+                            if not hasattr(self, "_settling_log_counter"):
+                                self._settling_log_counter = 0
+                            self._settling_log_counter += 1
+                            if self._settling_log_counter % 10 == 0:
+                                self.log_to_output(
+                                    f"Settling ({time_since_release:.2f}s) - "
+                                    f"Corr:({motion_vx:.3f},{motion_vy:.3f}) "
+                                    f"Vel:({current_vx:.3f},{current_vy:.3f}) "
+                                    f"PosErr:({integrated_position_x-target_position_x:.3f},{integrated_position_y-target_position_y:.3f})"
+                                )
                         else:
                             # Normal position hold corrections after settling
                             motion_vx, motion_vy = calculate_position_hold_corrections()
+
+                            # Debug logging after settling (less frequent)
+                            if not hasattr(self, "_hold_log_counter"):
+                                self._hold_log_counter = 0
+                            self._hold_log_counter += 1
+                            if self._hold_log_counter % 50 == 0:
+                                self.log_to_output(
+                                    f"Holding - "
+                                    f"Corr:({motion_vx:.3f},{motion_vy:.3f}) "
+                                    f"Vel:({current_vx:.3f},{current_vy:.3f}) "
+                                    f"PosErr:({integrated_position_x-target_position_x:.3f},{integrated_position_y-target_position_y:.3f})"
+                                )
                     else:
                         # Use direct joystick velocity when keys are pressed
                         motion_vx, motion_vy = joystick_vx, joystick_vy
@@ -3451,8 +3478,11 @@ class DeadReckoningGUI:
                                 "Origin" if self.joystick_hold_at_origin else "Current"
                             )
                             self.log_to_output(
-                                f"Joystick [{mode_text}]: target=({target_position_x:.3f}, {target_position_y:.3f}), "
-                                f"current=({integrated_position_x:.3f}, {integrated_position_y:.3f})"
+                                f"Joystick [{mode_text}] Moving - "
+                                f"Joy:({joystick_vx:.2f},{joystick_vy:.2f}) "
+                                f"Vel:({current_vx:.3f},{current_vy:.3f}) "
+                                f"Pos:({integrated_position_x:.3f},{integrated_position_y:.3f}) "
+                                f"Target:({target_position_x:.3f},{target_position_y:.3f})"
                             )
 
                     log_to_csv()
