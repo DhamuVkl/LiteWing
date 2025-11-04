@@ -80,6 +80,18 @@ WAYPOINT_TIMEOUT = 10.0  # Timeout in seconds before advancing to next waypoint 
 CORNER_PAUSE_DURATION = 0.3  # Pause duration at corners for stabilization (seconds)
 MIN_VELOCITY_THRESHOLD = 0.002  # Minimum velocity to consider stopped at waypoint
 
+# === JOYSTICK MOMENTUM COMPENSATION ===
+# When keys are released in "Hold at Current Position" mode, these parameters help prevent counter-movement
+MOMENTUM_COMPENSATION_TIME = (
+    0.08  # Seconds of velocity to predict stopping position (0.05-0.15 recommended)
+)
+SETTLING_DURATION = (
+    0.15  # Time to use gentler corrections after key release (0.1-0.3 seconds)
+)
+SETTLING_CORRECTION_FACTOR = (
+    0.5  # Correction strength during settling period (0.3-0.7, lower = gentler)
+)
+
 # === OUTPUT WINDOW LOG ===
 Output_Window = True  # Set to True to enable output log window, False to disable
 
@@ -3345,6 +3357,10 @@ class DeadReckoningGUI:
                 # Joystick control loop
                 flight_phase = "JOYSTICK_CONTROL"
 
+                # Variables for smooth key release handling
+                keys_were_pressed = False
+                key_release_time = 0.0
+
                 while self.joystick_active:
                     # Calculate direct velocity commands based on pressed keys
                     sensitivity = float(self.joystick_sensitivity_var.get())
@@ -3363,24 +3379,64 @@ class DeadReckoningGUI:
                     # Check if any keys are pressed
                     any_keys_pressed = any(self.joystick_keys.values())
 
+                    # Detect key release transition
+                    if keys_were_pressed and not any_keys_pressed:
+                        # Keys just released - mark the time and reset PID integrals
+                        key_release_time = time.time()
+
+                        # Reset PID integral terms to prevent overshoot
+                        position_integral_x = 0.0
+                        position_integral_y = 0.0
+                        velocity_integral_x = 0.0
+                        velocity_integral_y = 0.0
+
+                        # In current position mode, set target ahead slightly to compensate for momentum
+                        if not self.joystick_hold_at_origin:
+                            # Predict where drone will be after momentum dissipates
+                            # Use current velocity to estimate stopping position
+                            target_position_x = integrated_position_x + (
+                                current_vx * MOMENTUM_COMPENSATION_TIME
+                            )
+                            target_position_y = integrated_position_y + (
+                                current_vy * MOMENTUM_COMPENSATION_TIME
+                            )
+
+                            self.log_to_output(
+                                f"Key released - Target set with momentum compensation: "
+                                f"({target_position_x:.3f}, {target_position_y:.3f})"
+                            )
+
+                    keys_were_pressed = any_keys_pressed
+
+                    # Check if we're in settling period after key release
+                    time_since_release = (
+                        time.time() - key_release_time if key_release_time > 0 else 999
+                    )
+                    in_settling_period = time_since_release < SETTLING_DURATION
+
                     # For joystick control, we use direct velocity commands
-                    # Only apply position hold corrections if no keys are pressed (for stability)
                     if use_position_hold and sensor_data_ready and not any_keys_pressed:
-                        # Only apply position corrections when no joystick input (for stability)
-                        motion_vx, motion_vy = calculate_position_hold_corrections()
+                        if in_settling_period:
+                            # During settling period, use gentler corrections
+                            # Calculate normal corrections
+                            motion_vx, motion_vy = calculate_position_hold_corrections()
+                            # Reduce correction strength during settling
+                            motion_vx *= SETTLING_CORRECTION_FACTOR
+                            motion_vy *= SETTLING_CORRECTION_FACTOR
+                        else:
+                            # Normal position hold corrections after settling
+                            motion_vx, motion_vy = calculate_position_hold_corrections()
                     else:
                         # Use direct joystick velocity when keys are pressed
                         motion_vx, motion_vy = joystick_vx, joystick_vy
 
-                        # Update target position based on hold mode
+                        # Update target position based on hold mode (only while moving)
                         if self.joystick_hold_at_origin:
                             # Hold at Origin mode: Target always remains at (0, 0)
-                            # Drone will return to origin when keys are released
                             target_position_x = 0.0
                             target_position_y = 0.0
                         else:
-                            # Hold at Current Position mode: Target follows current position
-                            # Drone will hold wherever it is when keys are released
+                            # Hold at Current Position mode: Target follows current position while moving
                             target_position_x = integrated_position_x
                             target_position_y = integrated_position_y
 
