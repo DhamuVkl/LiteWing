@@ -75,7 +75,7 @@ MANEUVER_DISTANCE = 0.5  # 50cm default maneuver distance
 MANEUVER_THRESHOLD = 0.02  # Consider maneuver complete when within 2cm of target (tighter for better precision)
 APPROACH_DISTANCE = 0.20  # Distance at which to start reducing control corrections (increased for smoother approach)
 APPROACH_FACTOR = 0.3  # Factor to reduce corrections when approaching target (lower for gentler approach)
-JOYSTICK_SENSITIVITY = 0.5  # Default joystick sensitivity (0.1-2.0)
+JOYSTICK_SENSITIVITY = 0.4  # Default joystick sensitivity (0.1-2.0)
 WAYPOINT_TIMEOUT = 10.0  # Timeout in seconds before advancing to next waypoint (increased for reliability)
 CORNER_PAUSE_DURATION = 0.3  # Pause duration at corners for stabilization (seconds)
 MIN_VELOCITY_THRESHOLD = 0.002  # Minimum velocity to consider stopped at waypoint
@@ -2982,14 +2982,16 @@ class DeadReckoningGUI:
                     flight_phase = "MANEUVER"
                     if DEBUG_MODE:
                         print("DEBUG MODE: Simulating maneuver phase")
-                    # Move towards target position
+                    # Move towards target position using velocity control (like joystick)
                     maneuver_start_time = time.time()
                     corner_pause_start = None  # Track corner pause timing
+                    maneuver_velocity = (
+                        JOYSTICK_SENSITIVITY * 0.3
+                    )  # Use 30% of joystick sensitivity for autonomous maneuvers
 
                     while flight_active:
                         if use_position_hold and sensor_data_ready:
-                            motion_vx, motion_vy = calculate_position_hold_corrections()
-                            # Check if maneuver complete (close to target)
+                            # Calculate distance and direction to target
                             distance_to_target = (
                                 (integrated_position_x - target_position_x) ** 2
                                 + (integrated_position_y - target_position_y) ** 2
@@ -3019,8 +3021,26 @@ class DeadReckoningGUI:
                                 and corner_pause_start is None
                             ):
                                 corner_pause_start = time.time()
+
+                                # Apply momentum compensation damping at corner (same as joystick)
+                                # Set target BEHIND current position to create braking effect
+                                damped_target_x = integrated_position_x - (
+                                    current_vx * MOMENTUM_COMPENSATION_TIME
+                                )
+                                damped_target_y = integrated_position_y - (
+                                    current_vy * MOMENTUM_COMPENSATION_TIME
+                                )
+
+                                # Reset PID integral terms for clean settling
+                                position_integral_x = 0.0
+                                position_integral_y = 0.0
+                                velocity_integral_x = 0.0
+                                velocity_integral_y = 0.0
+
                                 print(
-                                    f"Corner reached - stabilizing for {CORNER_PAUSE_DURATION}s"
+                                    f"Corner reached at ({integrated_position_x:.3f},{integrated_position_y:.3f}) "
+                                    f"with velocity ({current_vx:.3f},{current_vy:.3f}) - "
+                                    f"applying momentum damping, stabilizing for {CORNER_PAUSE_DURATION}s"
                                 )
 
                             # Check if corner pause is complete
@@ -3029,6 +3049,56 @@ class DeadReckoningGUI:
                                 corner_pause_complete = (
                                     time.time() - corner_pause_start
                                 ) >= CORNER_PAUSE_DURATION
+
+                            # Determine control mode: velocity control to waypoint or position hold at corner
+                            if (
+                                corner_pause_start is not None
+                                and not corner_pause_complete
+                            ):
+                                # During corner pause: use position hold with damping target
+                                # This settles the drone at the corner smoothly
+                                motion_vx, motion_vy = (
+                                    calculate_position_hold_corrections()
+                                )
+                                # Temporarily update target for damping during corner pause
+                                saved_target_x = target_position_x
+                                saved_target_y = target_position_y
+                                target_position_x = damped_target_x
+                                target_position_y = damped_target_y
+                                motion_vx, motion_vy = (
+                                    calculate_position_hold_corrections()
+                                )
+                                target_position_x = saved_target_x
+                                target_position_y = saved_target_y
+                            elif distance_to_target > MANEUVER_THRESHOLD:
+                                # Moving to waypoint: use direct velocity control (like joystick)
+                                # Calculate direction to target
+                                delta_x = target_position_x - integrated_position_x
+                                delta_y = target_position_y - integrated_position_y
+
+                                # Normalize direction and apply velocity
+                                if distance_to_target > 0.001:
+                                    direction_x = delta_x / distance_to_target
+                                    direction_y = delta_y / distance_to_target
+
+                                    # Apply velocity in direction of target
+                                    motion_vx = direction_x * maneuver_velocity
+                                    motion_vy = direction_y * maneuver_velocity
+
+                                    # Slow down when approaching waypoint (progressive deceleration)
+                                    if distance_to_target < APPROACH_DISTANCE:
+                                        approach_factor = (
+                                            distance_to_target / APPROACH_DISTANCE
+                                        )
+                                        motion_vx *= approach_factor
+                                        motion_vy *= approach_factor
+                                else:
+                                    motion_vx, motion_vy = 0.0, 0.0
+                            else:
+                                # Close to waypoint but not stopped yet: use position hold
+                                motion_vx, motion_vy = (
+                                    calculate_position_hold_corrections()
+                                )
 
                             if (
                                 waypoint_reached
