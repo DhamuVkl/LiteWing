@@ -287,7 +287,7 @@ def np_set_all(cf, r, g, b):
     )
 
 
-def _try_send_with_retries(cf, fn, *args, retries=NP_SEND_RETRIES):
+def _try_send_with_retries(cf, fn, *args, retries=NP_SEND_RETRIES, logger=None):
     """Call a np_* function with retries and small inter-packet delay.
     fn is expected to be a function taking (cf, *args).
     Returns True on success, False on failure.
@@ -306,19 +306,23 @@ def _try_send_with_retries(cf, fn, *args, retries=NP_SEND_RETRIES):
                 args_repr = ", ".join(str(a) for a in args)
             except Exception:
                 args_repr = repr(args)
-            print(
-                f"[NeoPixel] Attempt {attempt}/{retries}: {fn_name}({args_repr}) using cf={type(cf)}"
-            )
+            if logger:
+                logger(
+                    f"[NeoPixel] Attempt {attempt}/{retries}: {fn_name}({args_repr}) using cf={type(cf)}"
+                )
 
             fn(cf, *args)
 
-            print(f"[NeoPixel] Success: {fn_name} on attempt {attempt}")
+            if logger:
+                logger(f"[NeoPixel] Success: {fn_name} on attempt {attempt}")
             return True
         except Exception as e:
             last_exc = e
-            print(f"[NeoPixel] Attempt {attempt} failed: {e}")
+            if logger:
+                logger(f"[NeoPixel] Attempt {attempt} failed: {e}")
             time.sleep(NP_PACKET_DELAY)
-    print(f"[NeoPixel] Failed after {retries} attempts: {last_exc}")
+    if logger:
+        logger(f"[NeoPixel] Failed after {retries} attempts: {last_exc}")
     return False
 
 
@@ -607,7 +611,7 @@ def battery_callback(timestamp, data, logconf):
     battery_data_ready = True
 
 
-def setup_logging(cf):
+def setup_logging(cf, logger=None):
     """Setup motion sensor and battery voltage logging"""
     log_motion = LogConfig(name="Motion", period_in_ms=SENSOR_PERIOD_MS)
     log_battery = LogConfig(
@@ -630,12 +634,21 @@ def setup_logging(cf):
                     log_motion.add_variable(var_name, var_type)
                     added_motion_vars.append(var_name)
                 except Exception as e:
-                    print(f"Failed to add motion variable {var_name}: {e}")
+                    if logger:
+                        logger(f"Failed to add motion variable {var_name}: {e}")
+                    else:
+                        print(f"Failed to add motion variable {var_name}: {e}")
             else:
-                print(f"Motion variable not found: {var_name}")
+                if logger:
+                    logger(f"Motion variable not found: {var_name}")
+                else:
+                    print(f"Motion variable not found: {var_name}")
 
         if len(added_motion_vars) < 2:
-            print("ERROR: Not enough motion variables found!")
+            if logger:
+                logger("ERROR: Not enough motion variables found!")
+            else:
+                print("ERROR: Not enough motion variables found!")
             return None, None
 
         # Setup battery logging
@@ -647,11 +660,20 @@ def setup_logging(cf):
                 try:
                     log_battery.add_variable(var_name, var_type)
                     added_battery_vars.append(var_name)
-                    print(f"Added battery variable: {var_name}")
+                    if logger:
+                        logger(f"Added battery variable: {var_name}")
+                    else:
+                        print(f"Added battery variable: {var_name}")
                 except Exception as e:
-                    print(f"Failed to add battery variable {var_name}: {e}")
+                    if logger:
+                        logger(f"Failed to add battery variable {var_name}: {e}")
+                    else:
+                        print(f"Failed to add battery variable {var_name}: {e}")
             else:
-                print(f"Battery variable not found: {var_name}")
+                if logger:
+                    logger(f"Battery variable not found: {var_name}")
+                else:
+                    print(f"Battery variable not found: {var_name}")
 
         # Setup callbacks
         log_motion.data_received_cb.add_callback(motion_callback)
@@ -667,10 +689,16 @@ def setup_logging(cf):
 
         # Validate configurations
         if not log_motion.valid:
-            print("ERROR: Motion log configuration invalid!")
+            if logger:
+                logger("ERROR: Motion log configuration invalid!")
+            else:
+                print("ERROR: Motion log configuration invalid!")
             return None, None
         if len(added_battery_vars) > 0 and not log_battery.valid:
-            print("WARNING: Battery log configuration invalid!")
+            if logger:
+                logger("WARNING: Battery log configuration invalid!")
+            else:
+                print("WARNING: Battery log configuration invalid!")
             # Continue without battery logging
             log_battery = None
 
@@ -680,18 +708,26 @@ def setup_logging(cf):
             log_battery.start()
 
         time.sleep(0.5)
-        print(
-            f"Logging started - Motion: {len(added_motion_vars)} vars, Battery: {len(added_battery_vars)} vars"
-        )
+        if logger:
+            logger(
+                f"Logging started - Motion: {len(added_motion_vars)} vars, Battery: {len(added_battery_vars)} vars"
+            )
+        else:
+            print(
+                f"Logging started - Motion: {len(added_motion_vars)} vars, Battery: {len(added_battery_vars)} vars"
+            )
         return log_motion, log_battery
 
     except Exception as e:
         error_msg = f"Logging setup failed: {str(e)}"
-        print(error_msg)
+        if logger:
+            logger(error_msg)
+        else:
+            print(error_msg)
         raise Exception(error_msg)
 
 
-def init_csv_logging():
+def init_csv_logging(logger=None):
     """Initialize CSV logging for position and height"""
     global log_file, log_writer
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -711,7 +747,10 @@ def init_csv_logging():
             "Correction VY",
         ]
     )
-    print(f"Logging to CSV: {log_filename}")
+    if logger:
+        logger(f"Logging to CSV: {log_filename}")
+    else:
+        print(f"Logging to CSV: {log_filename}")
 
 
 def log_to_csv():
@@ -734,13 +773,16 @@ def log_to_csv():
     )
 
 
-def close_csv_logging():
+def close_csv_logging(logger=None):
     """Close CSV log file"""
     global log_file
     if log_file:
         log_file.close()
         log_file = None
-        print("CSV log closed.")
+        if logger:
+            logger("CSV log closed.")
+        else:
+            print("CSV log closed.")
 
 
 class DeadReckoningGUI:
@@ -1728,16 +1770,24 @@ class DeadReckoningGUI:
                     else None
                 )
                 if cf is not None:
-                    _try_send_with_retries(cf, np_set_all, r, g, b)
-                    _try_send_with_retries(cf, np_start_blink, 500, 500)
+                    _try_send_with_retries(
+                        cf, np_set_all, r, g, b, logger=self.log_to_output
+                    )
+                    _try_send_with_retries(
+                        cf, np_start_blink, 500, 500, logger=self.log_to_output
+                    )
                 else:
                     tmp_cf = Crazyflie(rw_cache="./cache")
                     try:
                         with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
                             tmp = getattr(scf, "cf", tmp_cf)
                             time.sleep(NP_LINK_SETUP_DELAY)
-                            _try_send_with_retries(tmp, np_set_all, r, g, b)
-                            _try_send_with_retries(tmp, np_start_blink, 500, 500)
+                            _try_send_with_retries(
+                                tmp, np_set_all, r, g, b, logger=self.log_to_output
+                            )
+                            _try_send_with_retries(
+                                tmp, np_start_blink, 500, 500, logger=self.log_to_output
+                            )
                     except Exception as e:
                         print(f"NeoPixel blink start error: {e}")
                         raise
@@ -1756,18 +1806,25 @@ class DeadReckoningGUI:
 
                 # Stop blinking but restore last color (do not clear stored RGB)
                 if cf is not None:
-                    _try_send_with_retries(cf, np_stop_blink)
+                    _try_send_with_retries(cf, np_stop_blink, logger=self.log_to_output)
                     # Restore last color so stop is non-destructive
-                    _try_send_with_retries(cf, np_set_all, *self.neo_last_color)
+                    _try_send_with_retries(
+                        cf, np_set_all, *self.neo_last_color, logger=self.log_to_output
+                    )
                 else:
                     tmp_cf = Crazyflie(rw_cache="./cache")
                     try:
                         with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
                             tmp = getattr(scf, "cf", tmp_cf)
                             time.sleep(NP_LINK_SETUP_DELAY)
-                            _try_send_with_retries(tmp, np_stop_blink)
                             _try_send_with_retries(
-                                tmp, np_set_all, *self.neo_last_color
+                                tmp, np_stop_blink, logger=self.log_to_output
+                            )
+                            _try_send_with_retries(
+                                tmp,
+                                np_set_all,
+                                *self.neo_last_color,
+                                logger=self.log_to_output,
                             )
                     except Exception:
                         pass
@@ -1801,8 +1858,10 @@ class DeadReckoningGUI:
             if cf is not None:
                 # Stop blink if active and set color
                 if self.blinking:
-                    _try_send_with_retries(cf, np_stop_blink)
-                _try_send_with_retries(cf, np_set_all, r, g, b)
+                    _try_send_with_retries(cf, np_stop_blink, logger=self.log_to_output)
+                _try_send_with_retries(
+                    cf, np_set_all, r, g, b, logger=self.log_to_output
+                )
             else:
                 tmp_cf = Crazyflie(rw_cache="./cache")
                 try:
@@ -1844,9 +1903,11 @@ class DeadReckoningGUI:
             cf = getattr(scf_instance, "cf", None) if scf_instance is not None else None
             if cf is not None:
                 if self.blinking:
-                    _try_send_with_retries(cf, np_stop_blink)
-                _try_send_with_retries(cf, np_set_all, r, g, b)
-                _try_send_with_retries(cf, np_show)
+                    _try_send_with_retries(cf, np_stop_blink, logger=self.log_to_output)
+                _try_send_with_retries(
+                    cf, np_set_all, r, g, b, logger=self.log_to_output
+                )
+                _try_send_with_retries(cf, np_show, logger=self.log_to_output)
             else:
                 tmp_cf = Crazyflie(rw_cache="./cache")
                 try:
@@ -1854,9 +1915,13 @@ class DeadReckoningGUI:
                         tmp = getattr(scf, "cf", tmp_cf)
                         time.sleep(NP_LINK_SETUP_DELAY)
                         if self.blinking:
-                            _try_send_with_retries(tmp, np_stop_blink)
-                        _try_send_with_retries(tmp, np_set_all, r, g, b)
-                        _try_send_with_retries(tmp, np_show)
+                            _try_send_with_retries(
+                                tmp, np_stop_blink, logger=self.log_to_output
+                            )
+                        _try_send_with_retries(
+                            tmp, np_set_all, r, g, b, logger=self.log_to_output
+                        )
+                        _try_send_with_retries(tmp, np_show, logger=self.log_to_output)
                 except Exception as e:
                     self.status_var.set(f"Status: NeoPixel error - {str(e)}")
                     print(f"NeoPixel error: {e}")
@@ -1894,16 +1959,18 @@ class DeadReckoningGUI:
         try:
             cf = getattr(scf_instance, "cf", None) if scf_instance is not None else None
             if cf is not None:
-                _try_send_with_retries(cf, np_stop_blink)
-                _try_send_with_retries(cf, np_clear)
+                _try_send_with_retries(cf, np_stop_blink, logger=self.log_to_output)
+                _try_send_with_retries(cf, np_clear, logger=self.log_to_output)
             else:
                 tmp_cf = Crazyflie(rw_cache="./cache")
                 try:
                     with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
                         tmp = getattr(scf, "cf", tmp_cf)
                         time.sleep(NP_LINK_SETUP_DELAY)
-                        _try_send_with_retries(tmp, np_stop_blink)
-                        _try_send_with_retries(tmp, np_clear)
+                        _try_send_with_retries(
+                            tmp, np_stop_blink, logger=self.log_to_output
+                        )
+                        _try_send_with_retries(tmp, np_clear, logger=self.log_to_output)
                 except Exception:
                     pass
 
@@ -1928,16 +1995,24 @@ class DeadReckoningGUI:
                     else None
                 )
                 if cf is not None:
-                    _try_send_with_retries(cf, np_set_all, 255, 0, 0)
-                    _try_send_with_retries(cf, np_start_blink, 500, 500)
+                    _try_send_with_retries(
+                        cf, np_set_all, 255, 0, 0, logger=self.log_to_output
+                    )
+                    _try_send_with_retries(
+                        cf, np_start_blink, 500, 500, logger=self.log_to_output
+                    )
                 else:
                     tmp_cf = Crazyflie(rw_cache="./cache")
                     try:
                         with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
                             tmp = getattr(scf, "cf", tmp_cf)
                             time.sleep(NP_LINK_SETUP_DELAY)
-                            _try_send_with_retries(tmp, np_set_all, 255, 0, 0)
-                            _try_send_with_retries(tmp, np_start_blink, 500, 500)
+                            _try_send_with_retries(
+                                tmp, np_set_all, 255, 0, 0, logger=self.log_to_output
+                            )
+                            _try_send_with_retries(
+                                tmp, np_start_blink, 500, 500, logger=self.log_to_output
+                            )
                     except Exception as e:
                         print(f"Low battery blink start error: {e}")
                         return
@@ -1959,16 +2034,20 @@ class DeadReckoningGUI:
                     else None
                 )
                 if cf is not None:
-                    _try_send_with_retries(cf, np_stop_blink)
-                    _try_send_with_retries(cf, np_clear)
+                    _try_send_with_retries(cf, np_stop_blink, logger=self.log_to_output)
+                    _try_send_with_retries(cf, np_clear, logger=self.log_to_output)
                 else:
                     tmp_cf = Crazyflie(rw_cache="./cache")
                     try:
                         with SyncCrazyflie(DRONE_URI, cf=tmp_cf) as scf:
                             tmp = getattr(scf, "cf", tmp_cf)
                             time.sleep(NP_LINK_SETUP_DELAY)
-                            _try_send_with_retries(tmp, np_stop_blink)
-                            _try_send_with_retries(tmp, np_clear)
+                            _try_send_with_retries(
+                                tmp, np_stop_blink, logger=self.log_to_output
+                            )
+                            _try_send_with_retries(
+                                tmp, np_clear, logger=self.log_to_output
+                            )
                     except Exception:
                         pass
                 self.blinking = False
@@ -2747,7 +2826,7 @@ class DeadReckoningGUI:
                 flight_phase = "SENSOR_TEST"
                 start_time = time.time()
                 if self.enable_sensor_logging_var.get():
-                    init_csv_logging()
+                    init_csv_logging(logger=self.log_to_output)
                 while sensor_test_active:  # Continue while sensor test is active
                     # Calculate corrections (they will be 0 if PID params are 0, but still updates internal state)
                     if use_position_hold and sensor_data_ready:
@@ -2766,7 +2845,7 @@ class DeadReckoningGUI:
         finally:
             # Stop logging
             if self.enable_sensor_logging_var.get():
-                close_csv_logging()
+                close_csv_logging(logger=self.log_to_output)
             if log_motion:
                 try:
                     log_motion.stop()
@@ -2905,7 +2984,7 @@ class DeadReckoningGUI:
 
                 # Setup logging
                 flight_phase = "SETUP"
-                log_motion, log_battery = setup_logging(cf)
+                log_motion, log_battery = setup_logging(cf, logger=self.log_to_output)
                 use_position_hold = log_motion is not None
                 if use_position_hold:
                     time.sleep(1.0)
@@ -2928,7 +3007,7 @@ class DeadReckoningGUI:
                 if DEBUG_MODE:
                     print("DEBUG MODE: Simulating takeoff phase")
                 start_time = time.time()
-                init_csv_logging()
+                init_csv_logging(logger=self.log_to_output)
                 while time.time() - start_time < TAKEOFF_TIME and flight_active:
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(
@@ -3118,7 +3197,7 @@ class DeadReckoningGUI:
             self.log_to_output(f"Flight Error: {str(e)}")
         finally:
             # Stop logging
-            close_csv_logging()
+            close_csv_logging(logger=self.log_to_output)
             if log_motion:
                 try:
                     log_motion.stop()
@@ -3273,7 +3352,7 @@ class DeadReckoningGUI:
                 flight_active = True
 
                 # Setup logging
-                log_motion, log_battery = setup_logging(cf)
+                log_motion, log_battery = setup_logging(cf, logger=self.log_to_output)
                 use_position_hold = log_motion is not None
                 if use_position_hold:
                     time.sleep(1.0)
@@ -3293,7 +3372,7 @@ class DeadReckoningGUI:
                 flight_phase = "JOYSTICK_TAKEOFF"
                 position_integration_enabled = False
                 start_time = time.time()
-                init_csv_logging()
+                init_csv_logging(logger=self.log_to_output)
 
                 while time.time() - start_time < TAKEOFF_TIME and self.joystick_active:
                     if not DEBUG_MODE:
@@ -3491,7 +3570,7 @@ class DeadReckoningGUI:
             self.log_to_output(f"Joystick Error: {str(e)}")
         finally:
             # Stop logging
-            close_csv_logging()
+            close_csv_logging(logger=self.log_to_output)
             if log_motion:
                 try:
                     log_motion.stop()
