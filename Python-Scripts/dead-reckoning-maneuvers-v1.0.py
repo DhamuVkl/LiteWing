@@ -1594,16 +1594,31 @@ class DeadReckoningGUI:
             self.output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             output_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+            # Output control buttons frame
+            output_buttons_frame = tk.Frame(right_column)
+            output_buttons_frame.pack(anchor=tk.W, pady=(5, 0))
+
             # Clear output button
             clear_output_button = tk.Button(
-                right_column,
+                output_buttons_frame,
                 text="Clear Output",
                 command=self.clear_output,
                 bg="gray",
                 fg="black",
                 font=("Arial", 9),
             )
-            clear_output_button.pack(anchor=tk.W, pady=(5, 0))
+            clear_output_button.pack(side=tk.LEFT, padx=(0, 5))
+
+            # Save output log button
+            save_output_button = tk.Button(
+                output_buttons_frame,
+                text="Save",
+                command=self.save_output_log,
+                bg="blue",
+                fg="white",
+                font=("Arial", 9),
+            )
+            save_output_button.pack(side=tk.LEFT)
         else:
             # If output window is disabled, set output_text to None
             self.output_text = None
@@ -2607,6 +2622,35 @@ class DeadReckoningGUI:
             self.output_text.delete(1.0, tk.END)
             self.log_to_output("Output window cleared")
 
+    def save_output_log(self):
+        """Save the output log to a file"""
+        if hasattr(self, "output_text") and self.output_text is not None:
+            try:
+                # Get all text from the output window
+                log_content = self.output_text.get(1.0, tk.END).strip()
+
+                if not log_content:
+                    self.status_var.set("Status: No log content to save")
+                    return
+
+                # Create filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"drone_output_log_{timestamp}.txt"
+
+                # Save to file
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(log_content)
+
+                self.status_var.set(f"Status: Log saved to {filename}")
+                self.log_to_output(f"Output log saved to: {filename}")
+
+            except Exception as e:
+                error_msg = f"Failed to save log: {str(e)}"
+                self.status_var.set(f"Status: {error_msg}")
+                self.log_to_output(error_msg)
+        else:
+            self.status_var.set("Status: Output window not available")
+
     def log_to_output(self, message):
         """Log a message to the output window"""
         if hasattr(self, "output_text") and self.output_text is not None:
@@ -2781,6 +2825,10 @@ class DeadReckoningGUI:
         global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time
         global position_integration_enabled  # Need to access this to enable integration
         global current_battery_voltage, battery_data_ready  # Reset battery on new connection
+
+        # Clear previous run data at start of new sensor test
+        self.root.after(0, lambda: self.clear_output())
+        self.root.after(0, lambda: self.clear_graphs())
 
         sensor_test_active = True
         flight_phase = "SENSOR_TEST"  # Update phase
@@ -2966,6 +3014,10 @@ class DeadReckoningGUI:
         global shape_active, shape_waypoints, shape_index, waypoint_start_time
         global current_battery_voltage, battery_data_ready  # Reset battery on new connection
         global position_integral_x, position_integral_y  # PID integral terms
+
+        # Clear previous run data at start of new flight
+        self.root.after(0, lambda: self.clear_output())
+        self.root.after(0, lambda: self.clear_graphs())
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
@@ -3336,6 +3388,10 @@ class DeadReckoningGUI:
         global position_integration_enabled  # Control position integration
         global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
         global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
+
+        # Clear previous run data at start of new joystick control
+        self.root.after(0, lambda: self.clear_output())
+        self.root.after(0, lambda: self.clear_graphs())
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
