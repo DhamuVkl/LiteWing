@@ -41,6 +41,10 @@ TRIM_VX = 0.0  # Forward/backward trim correction
 TRIM_VY = -0.1  # Left/right trim correction
 # Battery monitoring
 LOW_BATTERY_THRESHOLD = 2.9  # Low battery warning threshold in volts
+# Height sensor safety
+HEIGHT_SENSOR_MIN_CHANGE = (
+    0.015  # Minimum height change expected during takeoff (meters)
+)
 
 # === DEAD RECKONING POSITION CONTROL PARAMETERS ===
 # PID Controller Parameters
@@ -3098,33 +3102,20 @@ class DeadReckoningGUI:
 
                 # Height sensor validation during takeoff
                 takeoff_height_start = current_height
-                height_sensor_timeout = 1.5  # seconds - if height doesn't increase by 0.05m within this time, emergency stop
-                height_sensor_min_change = (
-                    0.05  # meters - minimum height change expected during takeoff
-                )
+                height_sensor_min_change = HEIGHT_SENSOR_MIN_CHANGE
 
                 while time.time() - start_time < TAKEOFF_TIME and flight_active:
-                    # HEIGHT SENSOR SAFETY CHECK: Detect stuck/frozen height sensor
+                    # Debug logging every 0.1 seconds to show height sensor status
                     elapsed_takeoff_time = time.time() - start_time
                     current_height_change = current_height - takeoff_height_start
 
                     if (
-                        elapsed_takeoff_time > height_sensor_timeout
-                        and current_height_change < height_sensor_min_change
-                        and not DEBUG_MODE
+                        int(elapsed_takeoff_time * 10) % 1 == 0
+                        and elapsed_takeoff_time > 0.05
                     ):
-                        # Height sensor appears stuck - emergency stop
-                        emergency_msg = (
-                            f"EMERGENCY STOP: Height sensor failure detected! "
-                            f"Height stuck at {current_height:.3f}m (change: {current_height_change:.3f}m) "
-                            f"after {elapsed_takeoff_time:.1f}s of takeoff thrust. "
-                            f"Expected >{height_sensor_min_change:.3f}m change."
+                        self.log_to_output(
+                            f"Takeoff Height Check: {current_height:.3f}m (change: {current_height_change:.3f}m) after {elapsed_takeoff_time:.1f}s"
                         )
-                        self.log_to_output(emergency_msg)
-                        flight_phase = "EMERGENCY_HEIGHT_SENSOR"
-                        # Emergency stop motors
-                        cf.commander.send_setpoint(0, 0, 0, 0)
-                        raise Exception(emergency_msg)
 
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(
@@ -3132,6 +3123,24 @@ class DeadReckoningGUI:
                         )  # Use global TARGET_HEIGHT
                     log_to_csv()
                     time.sleep(0.01)
+
+                # POST-TAKEOFF SAFETY CHECK: Verify height sensor worked during full takeoff period
+                takeoff_duration = time.time() - start_time
+                final_height_change = current_height - takeoff_height_start
+
+                if final_height_change < height_sensor_min_change and not DEBUG_MODE:
+                    # Height sensor appears stuck despite full takeoff thrust period - emergency stop
+                    emergency_msg = (
+                        f"EMERGENCY STOP: Height sensor failure detected! "
+                        f"Height stuck at {current_height:.3f}m (change: {final_height_change:.3f}m) "
+                        f"after full {takeoff_duration:.1f}s takeoff to {TARGET_HEIGHT:.3f}m target. "
+                        f"Expected >{height_sensor_min_change:.3f}m change with commanded thrust."
+                    )
+                    self.log_to_output(emergency_msg)
+                    flight_phase = "EMERGENCY_HEIGHT_SENSOR"
+                    # Emergency stop motors
+                    cf.commander.send_setpoint(0, 0, 0, 0)
+                    raise Exception(emergency_msg)
 
                 # Height stabilization phase - wait for drone to stabilize at target height
                 flight_phase = "STABILIZING"
@@ -3536,33 +3545,20 @@ class DeadReckoningGUI:
 
                 # Height sensor validation during takeoff
                 takeoff_height_start = current_height
-                height_sensor_timeout = 1.5  # seconds - if height doesn't increase by 0.05m within this time, emergency stop
-                height_sensor_min_change = (
-                    0.05  # meters - minimum height change expected during takeoff
-                )
+                height_sensor_min_change = HEIGHT_SENSOR_MIN_CHANGE
 
                 while time.time() - start_time < TAKEOFF_TIME and self.joystick_active:
-                    # HEIGHT SENSOR SAFETY CHECK: Detect stuck/frozen height sensor
+                    # Debug logging every 0.1 seconds to show height sensor status
                     elapsed_takeoff_time = time.time() - start_time
                     current_height_change = current_height - takeoff_height_start
 
                     if (
-                        elapsed_takeoff_time > height_sensor_timeout
-                        and current_height_change < height_sensor_min_change
-                        and not DEBUG_MODE
+                        int(elapsed_takeoff_time * 10) % 1 == 0
+                        and elapsed_takeoff_time > 0.05
                     ):
-                        # Height sensor appears stuck - emergency stop
-                        emergency_msg = (
-                            f"EMERGENCY STOP: Height sensor failure detected! "
-                            f"Height stuck at {current_height:.3f}m (change: {current_height_change:.3f}m) "
-                            f"after {elapsed_takeoff_time:.1f}s of takeoff thrust. "
-                            f"Expected >{height_sensor_min_change:.3f}m change."
+                        self.log_to_output(
+                            f"Joystick Takeoff Height Check: {current_height:.3f}m (change: {current_height_change:.3f}m) after {elapsed_takeoff_time:.1f}s"
                         )
-                        self.log_to_output(emergency_msg)
-                        flight_phase = "JOYSTICK_EMERGENCY_HEIGHT_SENSOR"
-                        # Emergency stop motors
-                        cf.commander.send_setpoint(0, 0, 0, 0)
-                        raise Exception(emergency_msg)
 
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(
@@ -3570,6 +3566,24 @@ class DeadReckoningGUI:
                         )
                     log_to_csv()
                     time.sleep(0.01)
+
+                # POST-TAKEOFF SAFETY CHECK: Verify height sensor worked during full takeoff period
+                takeoff_duration = time.time() - start_time
+                final_height_change = current_height - takeoff_height_start
+
+                if final_height_change < height_sensor_min_change and not DEBUG_MODE:
+                    # Height sensor appears stuck despite full takeoff thrust period - emergency stop
+                    emergency_msg = (
+                        f"EMERGENCY STOP: Height sensor failure detected! "
+                        f"Height stuck at {current_height:.3f}m (change: {final_height_change:.3f}m) "
+                        f"after full {takeoff_duration:.1f}s takeoff to {TARGET_HEIGHT:.3f}m target. "
+                        f"Expected >{height_sensor_min_change:.3f}m change with commanded thrust."
+                    )
+                    self.log_to_output(emergency_msg)
+                    flight_phase = "JOYSTICK_EMERGENCY_HEIGHT_SENSOR"
+                    # Emergency stop motors
+                    cf.commander.send_setpoint(0, 0, 0, 0)
+                    raise Exception(emergency_msg)
 
                 # Height stabilization phase - wait for drone to stabilize at target height
                 flight_phase = "JOYSTICK_STABILIZING"
