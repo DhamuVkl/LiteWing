@@ -76,8 +76,10 @@ MANEUVER_THRESHOLD = 0.02  # Consider maneuver complete when within 2cm of targe
 APPROACH_DISTANCE = 0.20  # Distance at which to start reducing control corrections (increased for smoother approach)
 APPROACH_FACTOR = 0.3  # Factor to reduce corrections when approaching target (lower for gentler approach)
 JOYSTICK_SENSITIVITY = 0.4  # Default joystick sensitivity (0.1-2.0)
-WAYPOINT_TIMEOUT = 10.0  # Timeout in seconds before advancing to next waypoint (increased for reliability)
-CORNER_PAUSE_DURATION = 0.3  # Pause duration at corners for stabilization (seconds)
+WAYPOINT_TIMEOUT = 15.0  # Timeout in seconds before advancing to next waypoint (increased for reliability)
+CORNER_PAUSE_DURATION = (
+    3.0  # Pause duration at corners for stabilization (3 seconds per corner)
+)
 MIN_VELOCITY_THRESHOLD = 0.002  # Minimum velocity to consider stopped at waypoint
 
 # === JOYSTICK MOMENTUM COMPENSATION ===
@@ -1278,14 +1280,14 @@ class DeadReckoningGUI:
             self.status_var.set("Status: Invalid maneuver distance")
 
     def calculate_square_waypoints(self, distance):
-        """Calculate waypoints for square pattern"""
+        """Calculate waypoints for square pattern: LEFT -> FORWARD -> RIGHT -> BACK"""
         x = integrated_position_x
         y = integrated_position_y
         return [
-            (x + distance, y),
-            (x + distance, y + distance),
-            (x, y + distance),
-            (x, y),
+            (x - distance, y),  # 1. Move LEFT
+            (x - distance, y + distance),  # 2. Move FORWARD (from left position)
+            (x, y + distance),  # 3. Move RIGHT (return to center X)
+            (x, y),  # 4. Move BACK (return to start)
         ]
 
     def start_shape_maneuver(self, waypoints):
@@ -1300,21 +1302,28 @@ class DeadReckoningGUI:
                 self.status_var.set(
                     f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start maneuver."
                 )
+                self.log_to_output(
+                    f"ERROR: Battery too low ({current_battery_voltage:.2f}V)!"
+                )
                 return
             elif current_battery_voltage == 0.0:
-                print("WARNING: Battery voltage unknown")
+                self.log_to_output(
+                    "WARNING: Battery voltage unknown - proceeding with caution"
+                )
 
             # SENSOR SAFETY CHECK
             if not sensor_data_ready:
                 self.status_var.set(
                     "Status: Sensor data not ready! Wait for height & motion readings."
                 )
+                self.log_to_output("ERROR: Sensor data not ready!")
                 return
 
             if current_height <= 0.0:
                 self.status_var.set(
                     "Status: Invalid height reading! Ensure drone is powered and sensors active."
                 )
+                self.log_to_output("ERROR: Invalid height reading!")
                 return
 
             # Set shape maneuver parameters
@@ -1357,21 +1366,28 @@ class DeadReckoningGUI:
                 self.status_var.set(
                     f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start maneuver."
                 )
+                self.log_to_output(
+                    f"ERROR: Battery too low ({current_battery_voltage:.2f}V)!"
+                )
                 return
             elif current_battery_voltage == 0.0:
-                print("WARNING: Battery voltage unknown")
+                self.log_to_output(
+                    "WARNING: Battery voltage unknown - proceeding with caution"
+                )
 
             # SENSOR SAFETY CHECK
             if not sensor_data_ready:
                 self.status_var.set(
                     "Status: Sensor data not ready! Wait for height & motion readings."
                 )
+                self.log_to_output("ERROR: Sensor data not ready!")
                 return
 
             if current_height <= 0.0:
                 self.status_var.set(
                     "Status: Invalid height reading! Ensure drone is powered and sensors active."
                 )
+                self.log_to_output("ERROR: Invalid height reading!")
                 return
 
             # Set maneuver parameters
@@ -2513,6 +2529,8 @@ class DeadReckoningGUI:
             timestamp = time.strftime("%H:%M:%S")
             self.output_text.insert(tk.END, f"[{timestamp}] {message}\n")
             self.output_text.see(tk.END)  # Auto-scroll to bottom
+        # Also print to console for debugging
+        print(f"[{time.strftime('%H:%M:%S')}] {message}")
 
     def clear_graphs(self):
         """Clear all graph data and reset plotting"""
@@ -2798,26 +2816,30 @@ class DeadReckoningGUI:
                 self.status_var.set(
                     f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start flight."
                 )
-                print(
-                    f"SAFETY: Flight blocked - Battery voltage {current_battery_voltage:.2f}V is below 3.5V minimum"
+                self.log_to_output(
+                    f"SAFETY: Flight blocked - Battery voltage {current_battery_voltage:.2f}V is below {LOW_BATTERY_THRESHOLD}V minimum"
                 )
                 return
             elif current_battery_voltage == 0.0:
-                print("WARNING: Battery voltage unknown")
+                self.log_to_output(
+                    "WARNING: Battery voltage unknown - proceeding with caution"
+                )
 
             # SENSOR SAFETY CHECK: ensure height and motion data are flowing
             if not sensor_data_ready:
                 self.status_var.set(
                     "Status: Sensor data not ready! Wait for height & motion readings."
                 )
-                print("SAFETY: Flight blocked - No sensor data received yet.")
+                self.log_to_output(
+                    "SAFETY: Flight blocked - No sensor data received yet."
+                )
                 return
 
             if current_height <= 0.0:  # e.g., drone on ground or invalid
                 self.status_var.set(
                     "Status: Invalid height reading! Ensure drone is powered and sensors active."
                 )
-                print(
+                self.log_to_output(
                     "SAFETY: Flight blocked - Height too low or invalid:",
                     current_height,
                 )
@@ -2933,6 +2955,10 @@ class DeadReckoningGUI:
                     time.sleep(0.01)
 
                 # Reset position tracking and enable integration for hover
+                # IMPORTANT: Reset sensor drift BEFORE starting flight
+                self.log_to_output(
+                    "Resetting sensor position to origin (0,0) before flight"
+                )
                 integrated_position_x = 0.0
                 integrated_position_y = 0.0
                 last_integration_time = time.time()
@@ -2977,17 +3003,94 @@ class DeadReckoningGUI:
                         )
                     time.sleep(CONTROL_UPDATE_RATE)
 
+                # Hover phase BEFORE maneuver (ONLY for shape maneuvers like square)
+                if maneuver_active and shape_active:
+                    flight_phase = "PRE-MANEUVER HOVER"
+                    initial_hover_duration = 3.0  # Hold position for 3 seconds before starting square maneuver
+                    self.log_to_output(
+                        f"[SQUARE MANEUVER] Hovering for {initial_hover_duration}s at takeoff position before starting..."
+                    )
+                    hover_start = time.time()
+                    while (
+                        time.time() - hover_start < initial_hover_duration
+                        and flight_active
+                    ):
+                        if use_position_hold and sensor_data_ready:
+                            motion_vx, motion_vy = calculate_position_hold_corrections()
+                        else:
+                            motion_vx, motion_vy = 0.0, 0.0
+                        log_to_csv()
+                        total_vx = TRIM_VX + motion_vy
+                        total_vy = TRIM_VY + motion_vx
+                        if not DEBUG_MODE:
+                            cf.commander.send_hover_setpoint(
+                                total_vx, total_vy, 0, TARGET_HEIGHT
+                            )
+                        time.sleep(CONTROL_UPDATE_RATE)
+
+                    # ONLY for shape maneuvers: reset position and recalculate waypoints
+                    if shape_active:
+                        # Reset position to origin before calculating maneuver waypoints
+                        # This ensures square starts from (0,0) regardless of drift during hover
+                        self.log_to_output(
+                            f"Resetting position from ({integrated_position_x:.3f}, {integrated_position_y:.3f}) to (0.0, 0.0)"
+                        )
+                        integrated_position_x = 0.0
+                        integrated_position_y = 0.0
+                        target_position_x = 0.0
+                        target_position_y = 0.0
+
+                        # Reset PID states after position reset
+                        position_integral_x = 0.0
+                        position_integral_y = 0.0
+                        velocity_integral_x = 0.0
+                        velocity_integral_y = 0.0
+
+                        # NOW recalculate waypoints from origin
+                        self.log_to_output(
+                            f"Calculating waypoints from origin (0.0, 0.0)"
+                        )
+                        # Get maneuver distance from first waypoint offset
+                        if len(shape_waypoints) > 0:
+                            original_first = shape_waypoints[0]
+                            # For LEFT movement, distance is negative X offset
+                            maneuver_dist = abs(original_first[0])
+                            # Calculate square waypoints from origin: LEFT -> FORWARD -> RIGHT -> BACK
+                            shape_waypoints = [
+                                (-maneuver_dist, 0.0),  # 1. Move LEFT from origin
+                                (-maneuver_dist, maneuver_dist),  # 2. Move FORWARD
+                                (0.0, maneuver_dist),  # 3. Move RIGHT
+                                (0.0, 0.0),  # 4. Move BACK to origin
+                            ]
+                            shape_index = 0
+                            target_position_x, target_position_y = shape_waypoints[0]
+                            waypoint_start_time = time.time()
+                            self.log_to_output(
+                                f"Square maneuver waypoints (LEFT->FORWARD->RIGHT->BACK): {shape_waypoints}"
+                            )
+
                 # Position hold hover or maneuver
                 if maneuver_active:
                     flight_phase = "MANEUVER"
                     if DEBUG_MODE:
-                        print("DEBUG MODE: Simulating maneuver phase")
+                        self.log_to_output("DEBUG MODE: Simulating maneuver phase")
+
+                    # Log maneuver type and target
+                    if shape_active:
+                        self.log_to_output(
+                            f"Starting SQUARE maneuver with velocity control (0.08 m/s)"
+                        )
+                    else:
+                        self.log_to_output(
+                            f"Starting SIMPLE maneuver to ({target_position_x:.3f}, {target_position_y:.3f}) "
+                            f"from ({integrated_position_x:.3f}, {integrated_position_y:.3f}) "
+                            f"using velocity control (0.15 m/s)"
+                        )
+
                     # Move towards target position using velocity control (like joystick)
                     maneuver_start_time = time.time()
                     corner_pause_start = None  # Track corner pause timing
-                    maneuver_velocity = (
-                        JOYSTICK_SENSITIVITY * 0.3
-                    )  # Use 30% of joystick sensitivity for autonomous maneuvers
+                    maneuver_velocity = 0.08  # Slow, precise velocity for accurate square maneuver (0.08 m/s)
 
                     while flight_active:
                         if use_position_hold and sensor_data_ready:
@@ -3037,18 +3140,43 @@ class DeadReckoningGUI:
                                 velocity_integral_x = 0.0
                                 velocity_integral_y = 0.0
 
-                                print(
+                                self.log_to_output(
                                     f"Corner reached at ({integrated_position_x:.3f},{integrated_position_y:.3f}) "
                                     f"with velocity ({current_vx:.3f},{current_vy:.3f}) - "
                                     f"applying momentum damping, stabilizing for {CORNER_PAUSE_DURATION}s"
                                 )
 
-                            # Check if corner pause is complete
+                            # Check if corner pause is complete AND drone is stabilized
                             corner_pause_complete = False
                             if corner_pause_start is not None:
+                                time_elapsed = time.time() - corner_pause_start
+                                # Require both time elapsed AND low velocity for true stabilization
+                                velocity_stable = (
+                                    velocity_magnitude < MIN_VELOCITY_THRESHOLD
+                                )
                                 corner_pause_complete = (
-                                    time.time() - corner_pause_start
-                                ) >= CORNER_PAUSE_DURATION
+                                    time_elapsed >= CORNER_PAUSE_DURATION
+                                    and velocity_stable
+                                )
+
+                                # Log stabilization progress
+                                if (
+                                    time_elapsed >= CORNER_PAUSE_DURATION
+                                    and not velocity_stable
+                                ):
+                                    if not hasattr(
+                                        self, "_stabilization_warning_logged"
+                                    ):
+                                        self._stabilization_warning_logged = True
+                                        self.log_to_output(
+                                            f"Corner pause time complete but velocity still high: {velocity_magnitude:.4f} m/s - waiting for stabilization..."
+                                        )
+                                elif corner_pause_complete:
+                                    if hasattr(self, "_stabilization_warning_logged"):
+                                        delattr(self, "_stabilization_warning_logged")
+                                    self.log_to_output(
+                                        f"Corner stabilized after {time_elapsed:.2f}s - moving to next waypoint"
+                                    )
 
                             # Determine control mode: velocity control to waypoint or position hold at corner
                             if (
@@ -3057,10 +3185,6 @@ class DeadReckoningGUI:
                             ):
                                 # During corner pause: use position hold with damping target
                                 # This settles the drone at the corner smoothly
-                                motion_vx, motion_vy = (
-                                    calculate_position_hold_corrections()
-                                )
-                                # Temporarily update target for damping during corner pause
                                 saved_target_x = target_position_x
                                 saved_target_y = target_position_y
                                 target_position_x = damped_target_x
@@ -3071,29 +3195,111 @@ class DeadReckoningGUI:
                                 target_position_x = saved_target_x
                                 target_position_y = saved_target_y
                             elif distance_to_target > MANEUVER_THRESHOLD:
-                                # Moving to waypoint: use direct velocity control (like joystick)
-                                # Calculate direction to target
-                                delta_x = target_position_x - integrated_position_x
-                                delta_y = target_position_y - integrated_position_y
+                                # Moving to waypoint: use different control for shape vs simple maneuvers
 
-                                # Normalize direction and apply velocity
-                                if distance_to_target > 0.001:
-                                    direction_x = delta_x / distance_to_target
-                                    direction_y = delta_y / distance_to_target
+                                if shape_active:
+                                    # SQUARE MANEUVER: Use HYBRID control (velocity + position correction)
+                                    # This prevents sideways drift while maintaining forward velocity
 
-                                    # Apply velocity in direction of target
-                                    motion_vx = direction_x * maneuver_velocity
-                                    motion_vy = direction_y * maneuver_velocity
+                                    # Calculate direction to target
+                                    delta_x = target_position_x - integrated_position_x
+                                    delta_y = target_position_y - integrated_position_y
 
-                                    # Slow down when approaching waypoint (progressive deceleration)
-                                    if distance_to_target < APPROACH_DISTANCE:
-                                        approach_factor = (
-                                            distance_to_target / APPROACH_DISTANCE
+                                    # Normalize direction and apply velocity
+                                    if distance_to_target > 0.001:
+                                        direction_x = delta_x / distance_to_target
+                                        direction_y = delta_y / distance_to_target
+
+                                        # Base velocity in direction of target
+                                        base_velocity_x = (
+                                            direction_x * maneuver_velocity
                                         )
-                                        motion_vx *= approach_factor
-                                        motion_vy *= approach_factor
+                                        base_velocity_y = (
+                                            direction_y * maneuver_velocity
+                                        )
+
+                                        # Slow down when approaching waypoint (progressive deceleration)
+                                        if distance_to_target < APPROACH_DISTANCE:
+                                            approach_factor = (
+                                                distance_to_target / APPROACH_DISTANCE
+                                            )
+                                            base_velocity_x *= approach_factor
+                                            base_velocity_y *= approach_factor
+
+                                        # Add position hold correction to counteract drift (hybrid control)
+                                        # This keeps drone on straight path while moving forward
+                                        correction_vx, correction_vy = (
+                                            calculate_position_hold_corrections()
+                                        )
+
+                                        # Calculate perpendicular component (drift correction only)
+                                        # Project correction onto perpendicular axis to target direction
+                                        dot_product = (
+                                            correction_vx * direction_x
+                                            + correction_vy * direction_y
+                                        )
+                                        parallel_correction_x = (
+                                            dot_product * direction_x
+                                        )
+                                        parallel_correction_y = (
+                                            dot_product * direction_y
+                                        )
+                                        perpendicular_correction_x = (
+                                            correction_vx - parallel_correction_x
+                                        )
+                                        perpendicular_correction_y = (
+                                            correction_vy - parallel_correction_y
+                                        )
+
+                                        # Combine: base velocity + perpendicular drift correction
+                                        # This maintains forward speed while correcting sideways drift
+                                        motion_vx = base_velocity_x + (
+                                            perpendicular_correction_x * 0.5
+                                        )
+                                        motion_vy = base_velocity_y + (
+                                            perpendicular_correction_y * 0.5
+                                        )
+                                    else:
+                                        motion_vx, motion_vy = 0.0, 0.0
                                 else:
-                                    motion_vx, motion_vy = 0.0, 0.0
+                                    # SIMPLE MANEUVER (forward/back/left/right): Use VELOCITY control
+                                    # Calculate direction to target
+                                    delta_x = target_position_x - integrated_position_x
+                                    delta_y = target_position_y - integrated_position_y
+
+                                    # Normalize direction and apply velocity
+                                    if distance_to_target > 0.001:
+                                        direction_x = delta_x / distance_to_target
+                                        direction_y = delta_y / distance_to_target
+
+                                        # Base velocity in direction of target (faster than square maneuver)
+                                        simple_maneuver_velocity = (
+                                            0.15  # 0.15 m/s for quick, precise movement
+                                        )
+                                        base_velocity_x = (
+                                            direction_x * simple_maneuver_velocity
+                                        )
+                                        base_velocity_y = (
+                                            direction_y * simple_maneuver_velocity
+                                        )
+
+                                        # Slow down when approaching target (progressive deceleration)
+                                        if distance_to_target < APPROACH_DISTANCE:
+                                            approach_factor = (
+                                                distance_to_target / APPROACH_DISTANCE
+                                            )
+                                            base_velocity_x *= approach_factor
+                                            base_velocity_y *= approach_factor
+
+                                        motion_vx = base_velocity_x
+                                        motion_vy = base_velocity_y
+
+                                        self.log_to_output(
+                                            f"Simple maneuver: distance={distance_to_target:.3f}m, "
+                                            f"velocity=({motion_vx:.3f},{motion_vy:.3f})"
+                                        )
+                                    else:
+                                        motion_vx, motion_vy = 0.0, 0.0
                             else:
                                 # Close to waypoint but not stopped yet: use position hold
                                 motion_vx, motion_vy = (
@@ -3106,7 +3312,7 @@ class DeadReckoningGUI:
                                 or waypoint_timeout
                             ):
                                 if waypoint_timeout:
-                                    print(
+                                    self.log_to_output(
                                         f"Waypoint timeout ({WAYPOINT_TIMEOUT}s) - advancing to next waypoint"
                                     )
 
@@ -3126,18 +3332,19 @@ class DeadReckoningGUI:
                                         position_integral_y = 0.0
 
                                         flight_phase = f"MANEUVER {shape_index+1}/{len(shape_waypoints)}"
-                                        print(
+                                        self.log_to_output(
                                             f"Moving to waypoint {shape_index+1}/{len(shape_waypoints)} at ({target_position_x:.3f}, {target_position_y:.3f})"
                                         )
                                     else:
                                         shape_active = False
                                         maneuver_active = False
                                         flight_phase = "MANEUVER_COMPLETE"
-                                        print("Square maneuver complete!")
+                                        self.log_to_output("Square maneuver complete!")
                                         break
                                 else:
                                     flight_phase = "MANEUVER_COMPLETE"
                                     maneuver_active = False
+                                    self.log_to_output("Simple maneuver complete!")
                                     break
                         else:
                             motion_vx, motion_vy = 0.0, 0.0
@@ -3242,21 +3449,28 @@ class DeadReckoningGUI:
                     self.status_var.set(
                         f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start joystick control."
                     )
+                    self.log_to_output(
+                        f"ERROR: Battery too low ({current_battery_voltage:.2f}V)!"
+                    )
                     return
                 elif current_battery_voltage == 0.0:
-                    print("WARNING: Battery voltage unknown")
+                    self.log_to_output(
+                        "WARNING: Battery voltage unknown - proceeding with caution"
+                    )
 
                 # SENSOR SAFETY CHECK
                 if not sensor_data_ready:
                     self.status_var.set(
                         "Status: Sensor data not ready! Wait for height & motion readings."
                     )
+                    self.log_to_output("ERROR: Sensor data not ready!")
                     return
 
                 if current_height <= 0.0:
                     self.status_var.set(
                         "Status: Invalid height reading! Ensure drone is powered and sensors active."
                     )
+                    self.log_to_output("ERROR: Invalid height reading!")
                     return
 
                 # Start joystick control
