@@ -892,14 +892,28 @@ class DeadReckoningGUI:
         )
         self.reset_battery_button.pack(side=tk.LEFT, padx=5)
 
+        # Create a frame for the checkboxes to stack them vertically
+        checkboxes_frame = tk.Frame(control_frame)
+        checkboxes_frame.pack(side=tk.LEFT, padx=(10, 0))
+
         # Enable logging checkbox for sensor test
         self.enable_sensor_logging_var = tk.BooleanVar(value=False)
         self.enable_sensor_logging_check = tk.Checkbutton(
-            control_frame,
+            checkboxes_frame,
             text="Log Sensor Test",
             variable=self.enable_sensor_logging_var,
         )
-        self.enable_sensor_logging_check.pack(side=tk.LEFT, padx=(10, 0))
+        self.enable_sensor_logging_check.pack(side=tk.TOP, anchor=tk.W)
+
+        # Enable debug mode checkbox (stacked below sensor test in same column)
+        self.enable_debug_mode_var = tk.BooleanVar(value=DEBUG_MODE)
+        self.enable_debug_mode_check = tk.Checkbutton(
+            checkboxes_frame,
+            text="Enable Debug Mode",
+            variable=self.enable_debug_mode_var,
+            command=self.toggle_debug_mode,
+        )
+        self.enable_debug_mode_check.pack(side=tk.TOP, anchor=tk.W)
 
         # Blink NeoPixel button - New button
         self.blink_button = tk.Button(
@@ -1851,6 +1865,17 @@ class DeadReckoningGUI:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel error: {e}")
             self.log_to_output(f"NeoPixel Error: {str(e)}")
+
+    def toggle_debug_mode(self):
+        """Toggle debug mode on/off"""
+        global DEBUG_MODE
+        DEBUG_MODE = self.enable_debug_mode_var.get()
+        mode_text = "ENABLED" if DEBUG_MODE else "DISABLED"
+        self.status_var.set(f"Status: Debug Mode {mode_text}")
+        self.log_to_output(
+            f"Debug Mode {mode_text} - {'Motor commands will be skipped' if DEBUG_MODE else 'Normal flight operations'}"
+        )
+        print(f"Debug Mode: {mode_text}")
 
     def set_static_mode(self):
         """Make the current LED color static (stop blinking but keep color)."""
