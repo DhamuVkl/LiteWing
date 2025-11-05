@@ -382,6 +382,27 @@ def periodic_position_reset():
     return False
 
 
+def reset_position_tracking():
+    """Reset integrated position tracking to prevent sensor drift"""
+    global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time, position_integration_enabled
+    global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
+    global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
+    integrated_position_x = 0.0
+    integrated_position_y = 0.0
+    last_integration_time = time.time()
+    last_reset_time = time.time()
+    position_integration_enabled = True
+    # Reset PID state
+    position_integral_x = 0.0
+    position_integral_y = 0.0
+    velocity_integral_x = 0.0
+    velocity_integral_y = 0.0
+    last_position_error_x = 0.0
+    last_position_error_y = 0.0
+    last_velocity_error_x = 0.0
+    last_velocity_error_y = 0.0
+
+
 def calculate_position_hold_corrections():
     """Calculate control corrections using PID controllers"""
     global current_correction_vx, current_correction_vy
@@ -2720,23 +2741,7 @@ class DeadReckoningGUI:
                     print("DEBUG MODE: Skipping flight initialization for sensor test")
 
                 # Enable position integration for sensor test
-                integrated_position_x = 0.0
-                integrated_position_y = 0.0
-                last_integration_time = time.time()
-                last_reset_time = time.time()
-                position_integration_enabled = True  # Enable position integration
-
-                # Reset PID controller state (not used in sensor test, but good practice)
-                global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
-                global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
-                position_integral_x = 0.0
-                position_integral_y = 0.0
-                velocity_integral_x = 0.0
-                velocity_integral_y = 0.0
-                last_position_error_x = 0.0
-                last_position_error_y = 0.0
-                last_velocity_error_x = 0.0
-                last_velocity_error_y = 0.0
+                reset_position_tracking()
 
                 # Run sensor test loop (no motor commands)
                 flight_phase = "SENSOR_TEST"
@@ -2933,25 +2938,8 @@ class DeadReckoningGUI:
                     time.sleep(0.01)
 
                 # Reset position tracking and enable integration for hover
-                integrated_position_x = 0.0
-                integrated_position_y = 0.0
-                last_integration_time = time.time()
-                last_reset_time = time.time()
-                position_integration_enabled = (
-                    True  # Enable position integration for hover
-                )
-
-                # Reset PID controller state
-                global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
-                global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
-                position_integral_x = 0.0
-                position_integral_y = 0.0
-                velocity_integral_x = 0.0
-                velocity_integral_y = 0.0
-                last_position_error_x = 0.0
-                last_position_error_y = 0.0
-                last_velocity_error_x = 0.0
-                last_velocity_error_y = 0.0
+                # Reset integrated position after takeoff to prevent sensor drift
+                reset_position_tracking()
 
                 # Height stabilization phase - wait for drone to stabilize at target height
                 flight_phase = "STABILIZING"
@@ -3316,21 +3304,8 @@ class DeadReckoningGUI:
                     time.sleep(0.01)
 
                 # Reset position tracking and enable integration
-                integrated_position_x = 0.0
-                integrated_position_y = 0.0
-                last_integration_time = time.time()
-                last_reset_time = time.time()
-                position_integration_enabled = True
-
-                # Reset PID state
-                position_integral_x = 0.0
-                position_integral_y = 0.0
-                velocity_integral_x = 0.0
-                velocity_integral_y = 0.0
-                last_position_error_x = 0.0
-                last_position_error_y = 0.0
-                last_velocity_error_x = 0.0
-                last_velocity_error_y = 0.0
+                # Reset integrated position after takeoff to prevent sensor drift
+                reset_position_tracking()
 
                 # Height stabilization phase - wait for drone to stabilize at target height
                 flight_phase = "JOYSTICK_STABILIZING"
