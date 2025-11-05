@@ -3066,6 +3066,16 @@ class DeadReckoningGUI:
                 if use_position_hold:
                     time.sleep(1.0)
 
+                # Reset position tracking immediately after logging setup for faster initialization
+                reset_position_tracking()
+
+                # SAFETY CHECK: Verify position integration reset was successful before takeoff
+                if not position_integration_enabled or integrated_position_x != 0.0 or integrated_position_y != 0.0:
+                    error_msg = f"SAFETY: Position integration reset failed! Integration enabled: {position_integration_enabled}, Position: ({integrated_position_x:.3f}, {integrated_position_y:.3f}). Cannot start flight."
+                    self.log_to_output(error_msg)
+                    flight_phase = "SAFETY_ERROR"
+                    raise Exception(error_msg)
+
                 # Initialize flight (skip if in debug mode)
                 if not DEBUG_MODE:
                     cf.commander.send_setpoint(0, 0, 0, 0)
@@ -3075,12 +3085,8 @@ class DeadReckoningGUI:
                 else:
                     print("DEBUG MODE: Skipping flight initialization")
 
-                # Takeoff (position integration disabled)
+                # Takeoff (position integration enabled from start for safety)
                 flight_phase = "TAKEOFF"
-                global position_integration_enabled
-                position_integration_enabled = (
-                    False  # Disable position integration during takeoff
-                )
                 if DEBUG_MODE:
                     print("DEBUG MODE: Simulating takeoff phase")
                 start_time = time.time()
@@ -3092,10 +3098,6 @@ class DeadReckoningGUI:
                         )  # Use global TARGET_HEIGHT
                     log_to_csv()
                     time.sleep(0.01)
-
-                # Reset position tracking and enable integration for hover
-                # Reset integrated position after takeoff to prevent sensor drift
-                reset_position_tracking()
 
                 # Height stabilization phase - wait for drone to stabilize at target height
                 flight_phase = "STABILIZING"
@@ -3438,6 +3440,16 @@ class DeadReckoningGUI:
                 if use_position_hold:
                     time.sleep(1.0)
 
+                # Reset position tracking immediately after logging setup for faster initialization
+                reset_position_tracking()
+
+                # SAFETY CHECK: Verify position integration reset was successful before takeoff
+                if not position_integration_enabled or integrated_position_x != 0.0 or integrated_position_y != 0.0:
+                    error_msg = f"SAFETY: Position integration reset failed! Integration enabled: {position_integration_enabled}, Position: ({integrated_position_x:.3f}, {integrated_position_y:.3f}). Cannot start joystick control."
+                    self.log_to_output(error_msg)
+                    flight_phase = "JOYSTICK_SAFETY_ERROR"
+                    raise Exception(error_msg)
+
                 # Initialize flight
                 if not DEBUG_MODE:
                     cf.commander.send_setpoint(0, 0, 0, 0)
@@ -3451,7 +3463,6 @@ class DeadReckoningGUI:
 
                 # Takeoff
                 flight_phase = "JOYSTICK_TAKEOFF"
-                position_integration_enabled = False
                 start_time = time.time()
                 init_csv_logging(logger=self.log_to_output)
 
@@ -3462,10 +3473,6 @@ class DeadReckoningGUI:
                         )
                     log_to_csv()
                     time.sleep(0.01)
-
-                # Reset position tracking and enable integration
-                # Reset integrated position after takeoff to prevent sensor drift
-                reset_position_tracking()
 
                 # Height stabilization phase - wait for drone to stabilize at target height
                 flight_phase = "JOYSTICK_STABILIZING"
