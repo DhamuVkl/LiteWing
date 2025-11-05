@@ -3070,7 +3070,11 @@ class DeadReckoningGUI:
                 reset_position_tracking()
 
                 # SAFETY CHECK: Verify position integration reset was successful before takeoff
-                if not position_integration_enabled or integrated_position_x != 0.0 or integrated_position_y != 0.0:
+                if (
+                    not position_integration_enabled
+                    or integrated_position_x != 0.0
+                    or integrated_position_y != 0.0
+                ):
                     error_msg = f"SAFETY: Position integration reset failed! Integration enabled: {position_integration_enabled}, Position: ({integrated_position_x:.3f}, {integrated_position_y:.3f}). Cannot start flight."
                     self.log_to_output(error_msg)
                     flight_phase = "SAFETY_ERROR"
@@ -3444,7 +3448,11 @@ class DeadReckoningGUI:
                 reset_position_tracking()
 
                 # SAFETY CHECK: Verify position integration reset was successful before takeoff
-                if not position_integration_enabled or integrated_position_x != 0.0 or integrated_position_y != 0.0:
+                if (
+                    not position_integration_enabled
+                    or integrated_position_x != 0.0
+                    or integrated_position_y != 0.0
+                ):
                     error_msg = f"SAFETY: Position integration reset failed! Integration enabled: {position_integration_enabled}, Position: ({integrated_position_x:.3f}, {integrated_position_y:.3f}). Cannot start joystick control."
                     self.log_to_output(error_msg)
                     flight_phase = "JOYSTICK_SAFETY_ERROR"
