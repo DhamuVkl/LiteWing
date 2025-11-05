@@ -9,6 +9,7 @@ from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.animation as animation
+from matplotlib.pylab import f
 import numpy as np
 import csv
 import math
@@ -169,6 +170,27 @@ start_time = None
 neo_controller = None
 # Debug counter for motion callback
 debug_counter = 0
+
+# Global logger function - can be set to GUI's log_to_output method
+global_logger = None
+
+
+def set_global_logger(logger_func):
+    """Set the global logger function to redirect messages to GUI output window"""
+    global global_logger
+    global_logger = logger_func
+
+
+def log_message(message):
+    """Log a message using the global logger if available, otherwise print to console"""
+    if global_logger is not None:
+        try:
+            global_logger(message)
+        except Exception:
+            # Fallback to print if logger fails
+            print(message)
+    else:
+        print(message)
 
 
 # === HELPER FUNCTIONS ===
@@ -641,18 +663,21 @@ def setup_logging(cf, logger=None):
                     if logger:
                         logger(f"Failed to add motion variable {var_name}: {e}")
                     else:
-                        print(f"Failed to add motion variable {var_name}: {e}")
+                        # Use global logger to redirect to output window
+                        log_message(f"Failed to add motion variable {var_name}: {e}")
             else:
                 if logger:
                     logger(f"Motion variable not found: {var_name}")
                 else:
-                    print(f"Motion variable not found: {var_name}")
+                    # Use global logger to redirect to output window
+                    log_message(f"Motion variable not found: {var_name}")
 
         if len(added_motion_vars) < 2:
             if logger:
                 logger("ERROR: Not enough motion variables found!")
             else:
-                print("ERROR: Not enough motion variables found!")
+                # Use global logger to redirect to output window
+                log_message("ERROR: Not enough motion variables found!")
             return None, None
 
         # Setup battery logging
@@ -667,17 +692,20 @@ def setup_logging(cf, logger=None):
                     if logger:
                         logger(f"Added battery variable: {var_name}")
                     else:
-                        print(f"Added battery variable: {var_name}")
+                        # Use global logger to redirect to output window
+                        log_message(f"Added battery variable: {var_name}")
                 except Exception as e:
                     if logger:
                         logger(f"Failed to add battery variable {var_name}: {e}")
                     else:
-                        print(f"Failed to add battery variable {var_name}: {e}")
+                        # Use global logger to redirect to output window
+                        log_message(f"Failed to add battery variable {var_name}: {e}")
             else:
                 if logger:
                     logger(f"Battery variable not found: {var_name}")
                 else:
-                    print(f"Battery variable not found: {var_name}")
+                    # Use global logger to redirect to output window
+                    log_message(f"Battery variable not found: {var_name}")
 
         # Setup callbacks
         log_motion.data_received_cb.add_callback(motion_callback)
@@ -696,13 +724,15 @@ def setup_logging(cf, logger=None):
             if logger:
                 logger("ERROR: Motion log configuration invalid!")
             else:
-                print("ERROR: Motion log configuration invalid!")
+                # Use global logger to redirect to output window
+                log_message("ERROR: Motion log configuration invalid!")
             return None, None
         if len(added_battery_vars) > 0 and not log_battery.valid:
             if logger:
                 logger("WARNING: Battery log configuration invalid!")
             else:
-                print("WARNING: Battery log configuration invalid!")
+                # Use global logger to redirect to output window
+                log_message("WARNING: Battery log configuration invalid!")
             # Continue without battery logging
             log_battery = None
 
@@ -717,7 +747,8 @@ def setup_logging(cf, logger=None):
                 f"Logging started - Motion: {len(added_motion_vars)} vars, Battery: {len(added_battery_vars)} vars"
             )
         else:
-            print(
+            # Use global logger to redirect to output window
+            log_message(
                 f"Logging started - Motion: {len(added_motion_vars)} vars, Battery: {len(added_battery_vars)} vars"
             )
         return log_motion, log_battery
@@ -727,7 +758,8 @@ def setup_logging(cf, logger=None):
         if logger:
             logger(error_msg)
         else:
-            print(error_msg)
+            # Use global logger to redirect to output window
+            log_message(error_msg)
         raise Exception(error_msg)
 
 
@@ -754,7 +786,8 @@ def init_csv_logging(logger=None):
     if logger:
         logger(f"Logging to CSV: {log_filename}")
     else:
-        print(f"Logging to CSV: {log_filename}")
+        # Use global logger to redirect to output window
+        log_message(f"Logging to CSV: {log_filename}")
 
 
 def log_to_csv():
@@ -786,7 +819,8 @@ def close_csv_logging(logger=None):
         if logger:
             logger("CSV log closed.")
         else:
-            print("CSV log closed.")
+            # Use global logger to redirect to output window
+            log_message("CSV log closed.")
 
 
 class DeadReckoningGUI:
@@ -829,6 +863,9 @@ class DeadReckoningGUI:
 
         self.create_ui()
         self.setup_plots()
+
+        # Set up global logging to redirect fallback messages to the output window
+        set_global_logger(self.log_to_output)
 
         # NeoPixel state (lazy connect). We store a Crazyflie instance here
         # and a flag indicating whether this GUI owns the link (so we can
@@ -1345,7 +1382,7 @@ class DeadReckoningGUI:
         flight_active = False
         target_position_x = integrated_position_x
         target_position_y = integrated_position_y
-        print("Maneuver and flight stopped")
+        self.log_to_output("Maneuver and flight stopped")
         self.log_to_output("Maneuver stopped")
 
     def maneuver_square(self):
@@ -1421,7 +1458,9 @@ class DeadReckoningGUI:
             # Log to output window
             self.log_to_output(f"Shape maneuver started: {len(waypoints)} waypoints")
         elif self.sensor_test_running:
-            print("Cannot start Shape Maneuver while Sensor Test is active.")
+            self.log_to_output(
+                "Cannot start Shape Maneuver while Sensor Test is active."
+            )
             self.status_var.set(
                 "Status: Sensor Test Active - Cannot Start Shape Maneuver"
             )
@@ -1475,7 +1514,7 @@ class DeadReckoningGUI:
             # Log to output window
             self.log_to_output(f"Maneuver started: ({delta_x:.2f}, {delta_y:.2f})")
         elif self.sensor_test_running:
-            print("Cannot start Maneuver while Sensor Test is active.")
+            self.log_to_output("Cannot start Maneuver while Sensor Test is active.")
             self.status_var.set("Status: Sensor Test Active - Cannot Start Maneuver")
 
     def create_value_displays(self, parent):
@@ -1498,7 +1537,7 @@ class DeadReckoningGUI:
             row1, textvariable=self.height_var, font=("Arial", 11, "bold"), fg="blue"
         ).pack(side=tk.LEFT, padx=20)
         tk.Label(
-            row1, textvariable=self.phase_var, font=("Arial", 11, "bold"), fg="purple"
+            row1, textvariable=self.phase_var, font=("Arial", 11, "bold"), fg="red"
         ).pack(side=tk.LEFT, padx=20)
         tk.Label(
             row1, textvariable=self.battery_var, font=("Arial", 11, "bold"), fg="orange"
@@ -2485,24 +2524,26 @@ class DeadReckoningGUI:
             PERIODIC_RESET_INTERVAL = new_reset_int
             MAX_POSITION_ERROR = new_max_pos_err
 
-            print(f"Runtime Values Applied:")
-            print(f"  Target Height: {TARGET_HEIGHT}")
-            print(f"  Takeoff Time: {TAKEOFF_TIME}")
-            print(f"  Hover Duration: {HOVER_DURATION}")
-            print(f"  Landing Time: {LANDING_TIME}")
-            print(f"  Velocity Smoothing Alpha: {VELOCITY_SMOOTHING_ALPHA}")
-            print(f"  Max Correction: {MAX_CORRECTION}")
-            print(f"  Velocity Threshold: {VELOCITY_THRESHOLD}")
-            print(f"  Drift Compensation Rate: {DRIFT_COMPENSATION_RATE}")
-            print(f"  Reset Interval: {PERIODIC_RESET_INTERVAL}")
-            print(f"  Max Position Error: {MAX_POSITION_ERROR}")
+            self.log_to_output(f"Runtime Values Applied:")
+            self.log_to_output(f"  Target Height: {TARGET_HEIGHT}")
+            self.log_to_output(f"  Takeoff Time: {TAKEOFF_TIME}")
+            self.log_to_output(f"  Hover Duration: {HOVER_DURATION}")
+            self.log_to_output(f"  Landing Time: {LANDING_TIME}")
+            self.log_to_output(
+                f"  Velocity Smoothing Alpha: {VELOCITY_SMOOTHING_ALPHA}"
+            )
+            self.log_to_output(f"  Max Correction: {MAX_CORRECTION}")
+            self.log_to_output(f"  Velocity Threshold: {VELOCITY_THRESHOLD}")
+            self.log_to_output(f"  Drift Compensation Rate: {DRIFT_COMPENSATION_RATE}")
+            self.log_to_output(f"  Reset Interval: {PERIODIC_RESET_INTERVAL}")
+            self.log_to_output(f"  Max Position Error: {MAX_POSITION_ERROR}")
 
             # Log to output window
             self.log_to_output("Runtime values applied successfully")
 
         except ValueError as e:
-            print(f"Error applying runtime values: {e}")
-            print("Please enter valid numbers for all runtime parameters.")
+            self.log_to_output(f"Error applying runtime values: {e}")
+            self.log_to_output("Please enter valid numbers for all runtime parameters.")
 
     # --- END NEW FUNCTION ---
 
@@ -2530,15 +2571,19 @@ class DeadReckoningGUI:
             last_velocity_error_x = 0.0
             last_velocity_error_y = 0.0
 
-            print(f"PID Values Applied:")
-            print(f"Position: Kp={POSITION_KP}, Ki={POSITION_KI}, Kd={POSITION_KD}")
-            print(f"Velocity: Kp={VELOCITY_KP}, Ki={VELOCITY_KI}, Kd={VELOCITY_KD}")
+            self.log_to_output(f"PID Values Applied:")
+            self.log_to_output(
+                f"Position: Kp={POSITION_KP}, Ki={POSITION_KI}, Kd={POSITION_KD}"
+            )
+            self.log_to_output(
+                f"Velocity: Kp={VELOCITY_KP}, Ki={VELOCITY_KI}, Kd={VELOCITY_KD}"
+            )
 
             # Log to output window
             self.log_to_output("PID values applied successfully")
         except ValueError as e:
-            print(f"Error applying PID values: {e}")
-            print("Please enter valid numbers")
+            self.log_to_output(f"Error applying PID values: {e}")
+            self.log_to_output("Please enter valid numbers")
 
     def reset_pid_values(self):
         """Reset PID values to default"""
@@ -2551,7 +2596,7 @@ class DeadReckoningGUI:
         self.vel_kd_var.set("0.0")
         # Apply the reset values
         self.apply_pid_values()
-        print("PID values reset to default")
+        self.log_to_output("PID values reset to default")
 
     def apply_all_values(self):
         """Apply PID, TRIM, Optical Flow scaling, and Runtime values from GUI inputs"""
@@ -2564,21 +2609,21 @@ class DeadReckoningGUI:
         try:
             TRIM_VX = float(self.trim_vx_var.get())
             TRIM_VY = float(self.trim_vy_var.get())
-            print(f"TRIM Values Applied: VX={TRIM_VX}, VY={TRIM_VY}")
+            self.log_to_output(f"TRIM Values Applied: VX={TRIM_VX}, VY={TRIM_VY}")
         except ValueError as e:
-            print(f"Error applying TRIM values: {e}")
-            print("Please enter valid numbers for TRIM values")
+            self.log_to_output(f"Error applying TRIM values: {e}")
+            self.log_to_output("Please enter valid numbers for TRIM values")
 
         # Apply Optical Flow scaling values
         try:
             OPTICAL_FLOW_SCALE = float(self.scale_factor_var.get())
             USE_HEIGHT_SCALING = self.height_scaling_var.get()
-            print(
+            self.log_to_output(
                 f"Optical Flow Scaling Applied: Scale={OPTICAL_FLOW_SCALE}, Height Scaling={USE_HEIGHT_SCALING}"
             )
         except ValueError as e:
-            print(f"Error applying Optical Flow scaling: {e}")
-            print("Please enter valid numbers for scaling factor")
+            self.log_to_output(f"Error applying Optical Flow scaling: {e}")
+            self.log_to_output("Please enter valid numbers for scaling factor")
 
         # Apply Joystick sensitivity
         try:
@@ -2586,10 +2631,10 @@ class DeadReckoningGUI:
             JOYSTICK_SENSITIVITY = float(self.joystick_sensitivity_var.get())
             if JOYSTICK_SENSITIVITY < 0.1 or JOYSTICK_SENSITIVITY > 2.0:
                 raise ValueError("Sensitivity must be between 0.1 and 2.0")
-            print(f"Joystick Sensitivity Applied: {JOYSTICK_SENSITIVITY}")
+            self.log_to_output(f"Joystick Sensitivity Applied: {JOYSTICK_SENSITIVITY}")
         except ValueError as e:
-            print(f"Error applying joystick sensitivity: {e}")
-            print("Please enter a value between 0.1 and 2.0")
+            self.log_to_output(f"Error applying joystick sensitivity: {e}")
+            self.log_to_output("Please enter a value between 0.1 and 2.0")
 
     def reset_all_values(self):
         """Reset PID, TRIM, and Optical Flow scaling values to default"""
@@ -2634,7 +2679,7 @@ class DeadReckoningGUI:
         PERIODIC_RESET_INTERVAL = 30.0
         MAX_POSITION_ERROR = 2.0
         JOYSTICK_SENSITIVITY = 0.5
-        print("All values reset to default")
+        self.log_to_output("All values reset to default")
 
     def toggle_output_window(self):
         """Toggle the output window visibility"""
@@ -2801,7 +2846,7 @@ class DeadReckoningGUI:
             mode_text = "Current position mode: Drone will hold at the position where joystick is released"
 
         self.log_to_output(f"Joystick hold mode changed: {mode_text}")
-        print(
+        self.log_to_output(
             f"Joystick hold mode: {'Hold at Origin' if self.joystick_hold_at_origin else 'Hold at Current Position'}"
         )
 
@@ -2846,7 +2891,7 @@ class DeadReckoningGUI:
         self.status_var.set(
             "Status: Battery voltage reset. New reading will update shortly."
         )
-        print("Battery voltage reset to 0.0V")
+        self.log_to_output("Battery voltage reset to 0.0V")
 
     def sensor_test_controller_thread(self):  # New thread function for sensor test
         """Sensor test controller running in separate thread"""
@@ -2894,7 +2939,9 @@ class DeadReckoningGUI:
                     cf.param.set_value("commander.enHighLevel", "1")
                     time.sleep(0.5)
                 else:
-                    print("DEBUG MODE: Skipping flight initialization for sensor test")
+                    self.log_to_output(
+                        "DEBUG MODE: Skipping flight initialization for sensor test"
+                    )
 
                 # Enable position integration for sensor test
                 reset_position_tracking()
@@ -2917,7 +2964,7 @@ class DeadReckoningGUI:
                     if self.enable_sensor_logging_var.get():
                         log_to_csv()
         except Exception as e:
-            flight_phase = f"ERROR: {str(e)}"
+            flight_phase = "ERROR"
             self.log_to_output(f"Sensor Test Error: {str(e)}")
         finally:
             # Stop logging
@@ -2959,26 +3006,28 @@ class DeadReckoningGUI:
                 self.status_var.set(
                     f"Status: Battery too low ({current_battery_voltage:.2f}V)! Cannot start flight."
                 )
-                print(
+                self.log_to_output(
                     f"SAFETY: Flight blocked - Battery voltage {current_battery_voltage:.2f}V is below 3.5V minimum"
                 )
                 return
             elif current_battery_voltage == 0.0:
-                print("WARNING: Battery voltage unknown")
+                self.log_to_output("WARNING: Battery voltage unknown")
 
             # SENSOR SAFETY CHECK: ensure height and motion data are flowing
             if not sensor_data_ready:
                 self.status_var.set(
                     "Status: Sensor data not ready! Wait for height & motion readings."
                 )
-                print("SAFETY: Flight blocked - No sensor data received yet.")
+                self.log_to_output(
+                    "SAFETY: Flight blocked - No sensor data received yet."
+                )
                 return
 
             if current_height <= 0.0:  # e.g., drone on ground or invalid
                 self.status_var.set(
                     "Status: Invalid height reading! Ensure drone is powered and sensors active."
                 )
-                print(
+                self.log_to_output(
                     "SAFETY: Flight blocked - Height too low or invalid:",
                     current_height,
                 )
@@ -2997,7 +3046,7 @@ class DeadReckoningGUI:
             # Log to output window
             self.log_to_output("Flight started")
         elif self.sensor_test_running:
-            print("Cannot start Flight while Sensor Test is active.")
+            self.log_to_output("Cannot start Flight while Sensor Test is active.")
             self.status_var.set("Status: Sensor Test Active - Cannot Start Flight")
 
     def emergency_stop(self):
@@ -3091,12 +3140,12 @@ class DeadReckoningGUI:
                     cf.param.set_value("commander.enHighLevel", "1")
                     time.sleep(0.5)
                 else:
-                    print("DEBUG MODE: Skipping flight initialization")
+                    self.log_to_output("DEBUG MODE: Skipping flight initialization")
 
                 # Takeoff (position integration enabled from start for safety)
                 flight_phase = "TAKEOFF"
                 if DEBUG_MODE:
-                    print("DEBUG MODE: Simulating takeoff phase")
+                    self.log_to_output("DEBUG MODE: Simulating takeoff phase")
                 start_time = time.time()
                 init_csv_logging(logger=self.log_to_output)
 
@@ -3145,7 +3194,7 @@ class DeadReckoningGUI:
                 # Height stabilization phase - wait for drone to stabilize at target height
                 flight_phase = "STABILIZING"
                 if DEBUG_MODE:
-                    print("DEBUG MODE: Simulating stabilization phase")
+                    self.log_to_output("DEBUG MODE: Simulating stabilization phase")
                 stabilization_start = time.time()
                 stabilization_duration = 3.0  # 3 seconds to stabilize
 
@@ -3200,7 +3249,7 @@ class DeadReckoningGUI:
                 if maneuver_active:
                     flight_phase = "MANEUVER"
                     if DEBUG_MODE:
-                        print("DEBUG MODE: Simulating maneuver phase")
+                        self.log_to_output("DEBUG MODE: Simulating maneuver phase")
                     # Move towards target position
                     maneuver_start_time = time.time()
                     corner_pause_start = None  # Track corner pause timing
@@ -3238,7 +3287,7 @@ class DeadReckoningGUI:
                                 and corner_pause_start is None
                             ):
                                 corner_pause_start = time.time()
-                                print(
+                                self.log_to_output(
                                     f"Corner reached - stabilizing for {CORNER_PAUSE_DURATION}s"
                                 )
 
@@ -3255,7 +3304,7 @@ class DeadReckoningGUI:
                                 or waypoint_timeout
                             ):
                                 if waypoint_timeout:
-                                    print(
+                                    self.log_to_output(
                                         f"Waypoint timeout ({WAYPOINT_TIMEOUT}s) - advancing to next waypoint"
                                     )
 
@@ -3275,14 +3324,14 @@ class DeadReckoningGUI:
                                         position_integral_y = 0.0
 
                                         flight_phase = f"MANEUVER {shape_index+1}/{len(shape_waypoints)}"
-                                        print(
+                                        self.log_to_output(
                                             f"Moving to waypoint {shape_index+1}/{len(shape_waypoints)} at ({target_position_x:.3f}, {target_position_y:.3f})"
                                         )
                                     else:
                                         shape_active = False
                                         maneuver_active = False
                                         flight_phase = "MANEUVER_COMPLETE"
-                                        print("Square maneuver complete!")
+                                        self.log_to_output("Square maneuver complete!")
                                         break
                                 else:
                                     flight_phase = "MANEUVER_COMPLETE"
@@ -3302,7 +3351,7 @@ class DeadReckoningGUI:
                 else:
                     flight_phase = "HOVER"
                     if DEBUG_MODE:
-                        print("DEBUG MODE: Simulating hover phase")
+                        self.log_to_output("DEBUG MODE: Simulating hover phase")
                     start_time = time.time()
                     while (
                         time.time() - start_time < HOVER_DURATION and flight_active
@@ -3329,7 +3378,7 @@ class DeadReckoningGUI:
                 # Landing
                 flight_phase = "LANDING"
                 if DEBUG_MODE:
-                    print("DEBUG MODE: Simulating landing phase")
+                    self.log_to_output("DEBUG MODE: Simulating landing phase")
                 start_time = time.time()
                 while (
                     time.time() - start_time < LANDING_TIME and flight_active
@@ -3345,8 +3394,10 @@ class DeadReckoningGUI:
                 flight_phase = "COMPLETE"
 
         except Exception as e:
-            flight_phase = f"ERROR: {str(e)}"
-            self.log_to_output(f"Flight Error: {str(e)}")
+            error_msg = str(e)
+            flight_phase = "ERROR"
+            # Log the error message content to output
+            self.log_to_output(f"Flight Error: {error_msg}")
         finally:
             # Stop logging
             close_csv_logging(logger=self.log_to_output)
@@ -3393,7 +3444,7 @@ class DeadReckoningGUI:
                     )
                     return
                 elif current_battery_voltage == 0.0:
-                    print("WARNING: Battery voltage unknown")
+                    self.log_to_output("WARNING: Battery voltage unknown")
 
                 # SENSOR SAFETY CHECK
                 if not sensor_data_ready:
@@ -3534,7 +3585,7 @@ class DeadReckoningGUI:
                     cf.param.set_value("commander.enHighLevel", "1")
                     time.sleep(0.5)
                 else:
-                    print(
+                    self.log_to_output(
                         "DEBUG MODE: Skipping flight initialization for joystick control"
                     )
 
@@ -3795,8 +3846,10 @@ class DeadReckoningGUI:
                 flight_phase = "JOYSTICK_COMPLETE"
 
         except Exception as e:
-            flight_phase = f"JOYSTICK_ERROR: {str(e)}"
-            self.log_to_output(f"Joystick Error: {str(e)}")
+            error_msg = str(e)
+            flight_phase = "JOYSTICK_ERROR"
+            # Log the error message content to output
+            self.log_to_output(f"Joystick Error: {error_msg}")
         finally:
             # Stop logging
             close_csv_logging(logger=self.log_to_output)
