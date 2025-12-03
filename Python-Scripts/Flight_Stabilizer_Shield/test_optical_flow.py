@@ -26,6 +26,10 @@ DT = LOG_PERIOD_MS / 1000.0
 DEG_TO_RAD = math.pi / 180.0
 ALPHA = 0.7
 VELOCITY_THRESHOLD = 0.005
+
+# When True, invert (swap) the X axis so that left movement appears as left
+# in the GUI (e.g., moving the sensor left produces a negative X velocity).
+INVERT_X_AXIS_DEFAULT = True
 HISTORY_LENGTH = 400
 
 
@@ -57,6 +61,9 @@ class OpticalFlowApp:
         self.velocity_var = tk.StringVar(value="Velocity XY: 0.000, 0.000 m/s")
         self.height_var = tk.StringVar(value="Height: 0.000 m")
         self.squal_var = tk.StringVar(value="Surface Quality: 0")
+
+        # Sensor mount is always inverted; use a fixed boolean rather than a UI toggle
+        self.invert_x = bool(INVERT_X_AXIS_DEFAULT)
 
         self._build_controls()
         self._build_plot()
@@ -186,7 +193,9 @@ class OpticalFlowApp:
         squal = data.get("motion.squal", 0)
         altitude = data.get("stateEstimate.z", 0.0)
 
-        raw_vx = calculate_velocity(delta_x, altitude)
+        # Sensor is mounted inverted; map delta_x accordingly
+        delta_x_mapped = -delta_x if self.invert_x else delta_x
+        raw_vx = calculate_velocity(delta_x_mapped, altitude)
         raw_vy = calculate_velocity(delta_y, altitude)
         vx = smooth_velocity(raw_vx, self.smoothed_vx)
         vy = smooth_velocity(raw_vy, self.smoothed_vy)
@@ -207,7 +216,8 @@ class OpticalFlowApp:
             self.vy_history.append(vy)
             self.pos_x_history.append(self.position_x)
             self.pos_y_history.append(self.position_y)
-            self.latest_values = (delta_x, delta_y, vx, vy, altitude, squal)
+            # Store mapped delta_x since the GUI will show the mapped axis
+            self.latest_values = (delta_x_mapped, delta_y, vx, vy, altitude, squal)
 
         if time.time() - self.last_console_print >= 1.0:
             self.last_console_print = time.time()
