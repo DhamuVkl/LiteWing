@@ -29,23 +29,22 @@ def _send_crtp_with_fallback(cf: Crazyflie, port: int, channel: int, payload: by
 
     class _Packet:
         def __init__(self, header_value: int, data: bytes):
-            self._header = header_value
-            self._data = data
+            self.header = header_value
+            self.data = data
+            try:
+                self.datat = tuple(data)
+            except Exception:
+                self.datat = tuple()
 
         def is_data_size_valid(self) -> bool:
-            return len(self._data) <= 30
+            return len(self.data) <= 30
 
         @property
-        def data(self) -> bytes:
-            return self._data
+        def size(self) -> int:
+            return len(self.data)
 
-        @property
-        def header(self) -> int:
-            return self._header
-
-        @property
         def raw(self) -> bytes:
-            return bytes([self._header]) + self._data
+            return bytes([self.header]) + self.data
 
     packet = _Packet(header, payload)
 
@@ -70,12 +69,16 @@ def _send_crtp_with_fallback(cf: Crazyflie, port: int, channel: int, payload: by
 
         sendp = getattr(_crtp, "send_packet", None)
         if callable(sendp):
-            # cflib expects either packets with .raw or bytes
+            # cflib expects either packets with .raw() or raw bytes
             try:
                 sendp(packet)
-            except TypeError:
-                sendp(packet.raw)
-            return
+                return
+            except Exception:
+                try:
+                    sendp(packet.raw())
+                    return
+                except Exception:
+                    pass
     except Exception:  # noqa: BLE001
         pass
 
