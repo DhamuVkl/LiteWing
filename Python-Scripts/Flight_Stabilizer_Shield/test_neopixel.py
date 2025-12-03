@@ -279,10 +279,17 @@ class NeoPixelApp:
             self._log("Blink requested without connection")
             return
         r, g, b = self._clamp_rgb()
-        if _try_send_with_retries(cf, np_set_all, r, g, b, logger=self._log):
-            if _try_send_with_retries(cf, np_start_blink, logger=self._log):
-                self._log(f"Started blinking with RGB ({r}, {g}, {b})")
-                self.blinking = True
+        pixel_index = self.pixel_index_var.get()
+        if pixel_index < 0:
+            if _try_send_with_retries(cf, np_set_all, r, g, b, logger=self._log):
+                if _try_send_with_retries(cf, np_start_blink, logger=self._log):
+                    self._log(f"Started blinking all with RGB ({r}, {g}, {b})")
+                    self.blinking = True
+        else:
+            if _try_send_with_retries(cf, np_set_pixel, pixel_index, r, g, b, logger=self._log):
+                if _try_send_with_retries(cf, np_start_blink, logger=self._log):
+                    self._log(f"Started blinking pixel {pixel_index} with RGB ({r}, {g}, {b})")
+                    self.blinking = True
 
     def _clamp_rgb(self) -> tuple[int, int, int]:
         r = max(0, min(255, self.r_var.get()))
