@@ -87,20 +87,32 @@ def _send_crtp_with_fallback(cf: Crazyflie, port: int, channel: int, payload: by
 
 def np_set_pixel(cf: Crazyflie, index: int, r: int, g: int, b: int) -> None:
     payload = bytes([index & 0xFF, r & 0xFF, g & 0xFF, b & 0xFF])
+    print(f"[NeoPixel] Sending SET_PIXEL payload: {list(payload)}")
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SET_PIXEL, payload)
 
 
 def np_set_all(cf: Crazyflie, r: int, g: int, b: int) -> None:
     payload = bytes([0xFF, r & 0xFF, g & 0xFF, b & 0xFF])
+    print(f"[NeoPixel] Sending SET_ALL payload: {list(payload)}")
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SET_PIXEL, payload)
 
 
-def np_show(cf: Crazyflie) -> None:
-    _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SHOW, b"")
 
 
 def np_clear(cf: Crazyflie) -> None:
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_CLEAR, b"")
+
+
+def np_show(cf: Crazyflie) -> None:
+    """Tell the NeoPixel controller to commit previously set/pending colours.
+
+    Some implementations require SET_PIXEL to be followed by SHOW to update the LEDs
+    (this is how `neopixel_control.py` and other scripts use it). Blink commands
+    generally act as an effect and may update without SHOW, but SET/SET_ALL
+    requires SHOW to take effect.
+    """
+    print("[NeoPixel] Sending SHOW command")
+    _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SHOW, b"")
 
 
 def np_start_blink(cf: Crazyflie, on_ms: int = 500, off_ms: int = 500) -> None:
@@ -111,10 +123,12 @@ def np_start_blink(cf: Crazyflie, on_ms: int = 500, off_ms: int = 500) -> None:
         (off_ms >> 8) & 0xFF,
         off_ms & 0xFF,
     ])
+    print(f"[NeoPixel] Sending BLINK payload: {list(payload)}")
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_BLINK, payload)
 
 
 def np_stop_blink(cf: Crazyflie) -> None:
+    print("[NeoPixel] Sending STOP BLINK command")
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_BLINK, bytes([0, 0, 0, 0, 0]))
 
 
@@ -164,6 +178,7 @@ class NeoPixelApp:
         self.g_var = tk.IntVar(value=255)
         self.b_var = tk.IntVar(value=255)
         self.pixel_index_var = tk.IntVar(value=-1)
+        self.auto_show_var = tk.BooleanVar(value=True)
 
         for label_text, var in (("R", self.r_var), ("G", self.g_var), ("B", self.b_var)):
             frame = tk.Frame(spin_frame)
@@ -175,14 +190,15 @@ class NeoPixelApp:
         index_frame.pack(side=tk.LEFT, padx=6)
         ttk.Label(index_frame, text="Pixel index (-1=all):").pack(side=tk.LEFT)
         ttk.Spinbox(index_frame, from_=-1, to=255, textvariable=self.pixel_index_var, width=6).pack(side=tk.LEFT)
+        ttk.Checkbutton(index_frame, text="Auto SHOW", variable=self.auto_show_var).pack(side=tk.LEFT, padx=6)
 
         button_frame = ttk.Frame(self.root)
         button_frame.pack(fill=tk.X, padx=10, pady=6)
 
         ttk.Button(button_frame, text="Set Colour", command=self.set_colour, width=18).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Show", command=self.show_colour, width=10).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Clear", command=self.clear_leds, width=10).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Blink", command=self.start_blink, width=14).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Show", command=self._manual_show, width=10).pack(side=tk.LEFT, padx=5)
 
         log_frame = ttk.LabelFrame(self.root, text="Command Log")
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=6)
@@ -244,22 +260,25 @@ class NeoPixelApp:
             return
         r, g, b = self._clamp_rgb()
         pixel_index = self.pixel_index_var.get()
+        self._log(f"Pixel index var raw value: {pixel_index} (type: {type(pixel_index)})")
         if pixel_index < 0:
             ok = _try_send_with_retries(cf, np_set_all, r, g, b, logger=self._log)
             command = "Set all"
+            if ok:
+                # Commit the pixel updates
+                if self.auto_show_var.get():
+                    _try_send_with_retries(cf, np_show, logger=self._log)
         else:
             ok = _try_send_with_retries(cf, np_set_pixel, pixel_index, r, g, b, logger=self._log)
+            if ok:
+                # Commit the pixel updates
+                if self.auto_show_var.get():
+                    _try_send_with_retries(cf, np_show, logger=self._log)
             command = f"Set pixel {pixel_index}"
         if ok:
             self._log(f"{command} to RGB ({r}, {g}, {b})")
 
-    def show_colour(self) -> None:
-        cf = self.cf
-        if cf is None:
-            self._log("Show requested without connection")
-            return
-        if _try_send_with_retries(cf, np_show, logger=self._log):
-            self._log("Issued SHOW command")
+
 
     def clear_leds(self) -> None:
         cf = self.cf
@@ -273,6 +292,14 @@ class NeoPixelApp:
                 self._log("Stopped blinking")
             self.blinking = False
 
+    def _manual_show(self) -> None:
+        cf = self.cf
+        if cf is None:
+            self._log("Show requested without connection")
+            return
+        if _try_send_with_retries(cf, np_show, logger=self._log):
+            self._log("Show (commit) sent")
+
     def start_blink(self) -> None:
         cf = self.cf
         if cf is None:
@@ -282,11 +309,15 @@ class NeoPixelApp:
         pixel_index = self.pixel_index_var.get()
         if pixel_index < 0:
             if _try_send_with_retries(cf, np_set_all, r, g, b, logger=self._log):
+                # Commit the pixel updates before starting the blink effect
+                _try_send_with_retries(cf, np_show, logger=self._log)
                 if _try_send_with_retries(cf, np_start_blink, logger=self._log):
                     self._log(f"Started blinking all with RGB ({r}, {g}, {b})")
                     self.blinking = True
         else:
             if _try_send_with_retries(cf, np_set_pixel, pixel_index, r, g, b, logger=self._log):
+                # Commit the pixel updates before starting the blink effect
+                _try_send_with_retries(cf, np_show, logger=self._log)
                 if _try_send_with_retries(cf, np_start_blink, logger=self._log):
                     self._log(f"Started blinking pixel {pixel_index} with RGB ({r}, {g}, {b})")
                     self.blinking = True

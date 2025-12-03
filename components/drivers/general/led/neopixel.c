@@ -126,6 +126,15 @@ void neopixelSetPixelColor(int idx, uint8_t r, uint8_t g, uint8_t b)
     s_buffer[idx * 3 + 0] = r;
     s_buffer[idx * 3 + 1] = g;
     s_buffer[idx * 3 + 2] = b;
+    /* Invalidate the pre-built RMT items so that a subsequent 'show' will
+     * rebuild them from the updated buffer. This mirrors behaviour in
+     * neopixelSetAllColor which rebuilds/commits immediately.
+     */
+    if (s_items)
+    {
+        free(s_items);
+        s_items = NULL;
+    }
 }
 
 // Set all pixels to the same RGB color and immediately show it.
