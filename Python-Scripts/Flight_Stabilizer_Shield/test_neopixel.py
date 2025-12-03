@@ -182,7 +182,7 @@ class NeoPixelApp:
         ttk.Button(button_frame, text="Set Colour", command=self.set_colour, width=18).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Show", command=self.show_colour, width=10).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Clear", command=self.clear_leds, width=10).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Toggle Blink", command=self.toggle_blink, width=14).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Blink", command=self.start_blink, width=14).pack(side=tk.LEFT, padx=5)
 
         log_frame = ttk.LabelFrame(self.root, text="Command Log")
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=6)
@@ -269,23 +269,20 @@ class NeoPixelApp:
         if _try_send_with_retries(cf, np_clear, logger=self._log):
             self._log("Cleared LEDs")
         if self.blinking:
+            if _try_send_with_retries(cf, np_stop_blink, logger=self._log):
+                self._log("Stopped blinking")
             self.blinking = False
 
-    def toggle_blink(self) -> None:
+    def start_blink(self) -> None:
         cf = self.cf
         if cf is None:
             self._log("Blink requested without connection")
             return
-        if self.blinking:
-            if _try_send_with_retries(cf, np_stop_blink, logger=self._log):
-                self._log("Stopped blinking")
-                self.blinking = False
-        else:
-            r, g, b = self._clamp_rgb()
-            if _try_send_with_retries(cf, np_set_all, r, g, b, logger=self._log):
-                if _try_send_with_retries(cf, np_start_blink, logger=self._log):
-                    self._log(f"Started blinking with RGB ({r}, {g}, {b})")
-                    self.blinking = True
+        r, g, b = self._clamp_rgb()
+        if _try_send_with_retries(cf, np_set_all, r, g, b, logger=self._log):
+            if _try_send_with_retries(cf, np_start_blink, logger=self._log):
+                self._log(f"Started blinking with RGB ({r}, {g}, {b})")
+                self.blinking = True
 
     def _clamp_rgb(self) -> tuple[int, int, int]:
         r = max(0, min(255, self.r_var.get()))
