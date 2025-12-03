@@ -13,7 +13,16 @@ import cflib.crtp
 from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
+# UDP URI for the drone. Change this if your drone's IP is different.
 DRONE_URI = "udp://192.168.43.42"
+
+# NeoPixel CRTP port & channels
+# CRTP port 0x09 (9) is used for NeoPixel commands on LiteWing
+# Channels defined here match the firmware's `neopixel_crtp.c` implementation:
+#  - 0: SET_PIXEL (payload: idx,r,g,b) - index 0..N-1 for a single pixel. 0xFF = broadcast / "set all".
+#  - 1: SHOW (payload: none) - commit the current buffer to the LEDs (build RMT items and send).
+#  - 2: CLEAR (payload: none) - zero-out the buffer and clear LEDs.
+#  - 3: BLINK (payload: enable, on_ms_hi, on_ms_lo, off_ms_hi, off_ms_lo) - start/stop blink.
 CRTP_PORT_NEOPIXEL = 0x09
 NEOPIXEL_CHANNEL_SET_PIXEL = 0x00
 NEOPIXEL_CHANNEL_SHOW = 0x01
@@ -46,8 +55,14 @@ def _send_crtp_with_fallback(cf: Crazyflie, port: int, channel: int, payload: by
         def raw(self) -> bytes:
             return bytes([self.header]) + self.data
 
+    # Build a packet-like object that adapts to different cflib/crazyflie API versions.
+    # Some cflib versions expect a packet object with fields `header` and `data` and
+    # a `datat` tuple; others expect raw bytes. This wrapper tries the different
+    # send methods in turn to maximize compatibility across platforms and cflib
+    # versions used by the LiteWing project.
     packet = _Packet(header, payload)
 
+    # 1) Try Crazyflie.send_packet (some cflib versions provide this on Crazyflie instance)
     try:
         send_packet = getattr(cf, "send_packet", None)
         if callable(send_packet):
@@ -56,6 +71,7 @@ def _send_crtp_with_fallback(cf: Crazyflie, port: int, channel: int, payload: by
     except Exception:  # noqa: BLE001
         pass
 
+    # 2) Try the low-level link object (some cflib versions put send_packet on cf._link/link)
     try:
         link = getattr(cf, "_link", None) or getattr(cf, "link", None)
         if link is not None and callable(getattr(link, "send_packet", None)):
@@ -64,6 +80,7 @@ def _send_crtp_with_fallback(cf: Crazyflie, port: int, channel: int, payload: by
     except Exception:  # noqa: BLE001
         pass
 
+    # 3) Fallback: cflib.crtp.send_packet (try object first, then raw bytes)
     try:
         from cflib import crtp as _crtp  # Local import to avoid global dependency
 
@@ -86,12 +103,18 @@ def _send_crtp_with_fallback(cf: Crazyflie, port: int, channel: int, payload: by
 
 
 def np_set_pixel(cf: Crazyflie, index: int, r: int, g: int, b: int) -> None:
+    # Build SET_PIXEL payload (index, R, G, B)
+    # The index is a single byte, 0..N-1 for addressable pixels; 0xFF is a broadcast
+    # value used by `set_all` to set a single color across all pixels.
     payload = bytes([index & 0xFF, r & 0xFF, g & 0xFF, b & 0xFF])
     print(f"[NeoPixel] Sending SET_PIXEL payload: {list(payload)}")
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SET_PIXEL, payload)
 
 
 def np_set_all(cf: Crazyflie, r: int, g: int, b: int) -> None:
+    # Build SET_ALL payload: index=0xFF signals the firmware to set all pixels.
+    # This is how the firmware distinguishes between setting a specific pixel
+    # and a broadcast 'set all' operation using the same channel value.
     payload = bytes([0xFF, r & 0xFF, g & 0xFF, b & 0xFF])
     print(f"[NeoPixel] Sending SET_ALL payload: {list(payload)}")
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SET_PIXEL, payload)
@@ -100,6 +123,7 @@ def np_set_all(cf: Crazyflie, r: int, g: int, b: int) -> None:
 
 
 def np_clear(cf: Crazyflie) -> None:
+    # Send the CLEAR command which zeros the buffer and commits (calls neopixelShow())
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_CLEAR, b"")
 
 
@@ -112,6 +136,10 @@ def np_show(cf: Crazyflie) -> None:
     requires SHOW to take effect.
     """
     print("[NeoPixel] Sending SHOW command")
+    # SHOW tells the firmware to build the low-level RMT items from the current
+    # pixel buffer and send them over the RMT (timed output) driver onto the
+    # GPIO pin. Without SHOW the pixel buffer is just updated in RAM and not
+    # reflected on the LEDs until a SHOW occurs.
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_SHOW, b"")
 
 
@@ -124,6 +152,8 @@ def np_start_blink(cf: Crazyflie, on_ms: int = 500, off_ms: int = 500) -> None:
         off_ms & 0xFF,
     ])
     print(f"[NeoPixel] Sending BLINK payload: {list(payload)}")
+    # BLINK uses a 5-bytes payload: enable (1/0), on_ms (2-bytes big-endian), off_ms (2-bytes big-endian)
+    # The firmware will start a FreeRTOS timer to toggle output on/off as appropriate.
     _send_crtp_with_fallback(cf, CRTP_PORT_NEOPIXEL, NEOPIXEL_CHANNEL_BLINK, payload)
 
 
@@ -134,6 +164,7 @@ def np_stop_blink(cf: Crazyflie) -> None:
 
 def _try_send_with_retries(cf: Crazyflie, func, *args, retries: int = NP_SEND_RETRIES, logger=None) -> bool:
     last_exc: Exception | None = None
+    # Reliability: try sending packets multiple times to handle transient link issues.
     for attempt in range(1, retries + 1):
         try:
             func(cf, *args)
@@ -171,6 +202,10 @@ class NeoPixelApp:
         ttk.Button(control_frame, text="Disconnect", command=self.disconnect, width=12).pack(side=tk.LEFT, padx=5)
         ttk.Label(control_frame, textvariable=self.status_var, font=("Arial", 11, "bold"), foreground="blue").pack(side=tk.LEFT, padx=20)
 
+        # Colour controls: three spinboxes for RGB values, plus a spinbox for
+        # the pixel index (use -1 for broadcast to all pixels). An Auto SHOW
+        # checkbox and a manual Show button let you control when the buffer
+        # gets committed to the LEDs.
         spin_frame = ttk.LabelFrame(self.root, text="Colour Controls")
         spin_frame.pack(fill=tk.X, padx=10, pady=6)
 
@@ -195,6 +230,8 @@ class NeoPixelApp:
         button_frame = ttk.Frame(self.root)
         button_frame.pack(fill=tk.X, padx=10, pady=6)
 
+        # Buttons: Set Colour sets the selected pixel or all pixels; Clear clears
+        # the buffer; Blink starts a blink effect; Show will commit pending changes.
         ttk.Button(button_frame, text="Set Colour", command=self.set_colour, width=18).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Clear", command=self.clear_leds, width=10).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Blink", command=self.start_blink, width=14).pack(side=tk.LEFT, padx=5)
@@ -215,6 +252,8 @@ class NeoPixelApp:
             self._set_status("Status: Connecting...")
             try:
                 cflib.crtp.init_drivers(enable_debug_driver=False)
+                # Use SyncCrazyflie to open and manage the Crazyflie link in a
+                # worker thread — this avoids blocking the GUI main loop.
                 scf = SyncCrazyflie(DRONE_URI, cf=Crazyflie(rw_cache="./cache"))
                 scf.open_link()
                 time.sleep(NP_LINK_SETUP_DELAY)
@@ -258,20 +297,23 @@ class NeoPixelApp:
         if cf is None:
             self._log("Set colour requested without connection")
             return
+        # Get RGB values clamped to 0..255 and pack them into a bytes payload
+        # via the helper functions defined earlier.
         r, g, b = self._clamp_rgb()
         pixel_index = self.pixel_index_var.get()
         self._log(f"Pixel index var raw value: {pixel_index} (type: {type(pixel_index)})")
+        # If index < 0 use SET_ALL, otherwise use SET_PIXEL.
         if pixel_index < 0:
             ok = _try_send_with_retries(cf, np_set_all, r, g, b, logger=self._log)
             command = "Set all"
             if ok:
-                # Commit the pixel updates
+                # Commit the pixel updates (SHOW) if Auto SHOW is enabled.
                 if self.auto_show_var.get():
                     _try_send_with_retries(cf, np_show, logger=self._log)
         else:
             ok = _try_send_with_retries(cf, np_set_pixel, pixel_index, r, g, b, logger=self._log)
             if ok:
-                # Commit the pixel updates
+                # Commit the pixel updates (SHOW) if Auto SHOW is enabled.
                 if self.auto_show_var.get():
                     _try_send_with_retries(cf, np_show, logger=self._log)
             command = f"Set pixel {pixel_index}"
