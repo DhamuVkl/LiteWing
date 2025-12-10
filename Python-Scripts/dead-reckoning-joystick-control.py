@@ -69,7 +69,7 @@ OPTICAL_FLOW_SCALE = 4.4  # Empirical scaling factor
 USE_HEIGHT_SCALING = True
 
 # Joystick parameters
-JOYSTICK_SENSITIVITY = 0.5  # Default joystick sensitivity (0.1-2.0)
+JOYSTICK_SENSITIVITY = 0.9  # Default joystick sensitivity (0.1-2.0)
 
 # === GLOBAL VARIABLES ===
 # Sensor data
