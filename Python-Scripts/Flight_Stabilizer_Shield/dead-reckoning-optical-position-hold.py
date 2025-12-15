@@ -24,7 +24,7 @@ Usage:
 5. The drone will maintain its position automatically
 6. Click "Stop" or press Enter for emergency stop
 
-Author: LiteWing Project
+Author: Dharageswaran S
 Version: 1.0
 """
 

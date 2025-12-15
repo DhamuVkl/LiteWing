@@ -1,3 +1,40 @@
+"""
+Dead Reckoning Maneuvers - Full-Featured Control Script
+========================================================
+A comprehensive script for optical flow-based position hold with 
+advanced maneuver capabilities. Uses dead reckoning with PID controllers 
+to maintain the drone's position and execute directional maneuvers.
+
+This script provides a full-featured GUI for controlling the drone with
+real-time visualization of sensor data, position tracking, and various
+control modes including manual joystick control and autonomous shapes.
+
+Features:
+- Sensor Test to arm/prepare the drone
+- Optical flow-based position hold
+- Adjustable TRIM values, Height, and PID parameters
+- Real-time position, velocity, and correction feedback
+- Safety checks for battery and sensors
+- NeoPixel LED control for visual feedback
+- Directional maneuvers (Forward, Backward, Left, Right)
+- Autonomous shape execution
+- Joystick control with multiple modes
+- CSV data logging for flight analysis
+- Real-time matplotlib plotting
+
+Usage:
+1. Connect to the drone via UDP
+2. Click "Sensor Test" to arm and verify sensors
+3. Adjust parameters if needed (TRIM, Height, PID)
+4. Click "Start Position Hold" to takeoff and hover
+5. Use directional buttons or joystick for maneuvers
+6. The drone will maintain its position automatically
+7. Click "Stop" or press Enter for emergency stop
+
+Author: Dharageswaran S
+Version: 1.0
+"""
+
 import time
 import threading
 import cflib.crtp

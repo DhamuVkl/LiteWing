@@ -21,7 +21,7 @@ Usage:
 5. Use W/A/S/D keys or GUI buttons to move the drone
 6. Click "Stop" or press Enter for emergency stop
 
-Author: LiteWing Project
+Author: Dharageswaran S
 Version: 1.0
 """
 
