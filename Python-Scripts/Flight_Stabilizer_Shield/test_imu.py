@@ -1,4 +1,4 @@
-"""Standalone IMU sensor test for the LiteWing flight stabilizer shield.
+"""Standalone IMU sensor test for the LiteWing drone.
 
 This script connects to the drone, streams orientation and acceleration data, and
 shows the readings on both the console and a simple Tk GUI with live plots.

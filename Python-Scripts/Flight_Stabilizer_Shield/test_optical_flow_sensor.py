@@ -52,7 +52,7 @@ def calculate_velocity(delta_value: int, altitude_m: float) -> float:
 
     # velocity_constant encodes conversion factors (sensor FoV, resolution,
     # and logging period) into a per-sample scaling factor. 
-    velocity_constant = (5.4 * DEG_TO_RAD) / (30.0 * DT)
+    velocity_constant = (5.4 * DEG_TO_RAD) / (30.0 * DT)    # 5.4° = sensor field of view 30   = pixel resolution DT   = sample time (5 ms typical)
     return delta_value * altitude_m * velocity_constant
 
 
