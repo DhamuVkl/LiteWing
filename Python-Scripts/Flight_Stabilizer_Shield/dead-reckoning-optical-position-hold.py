@@ -59,7 +59,7 @@ DT = SENSOR_PERIOD_MS / 1000.0
 
 # Basic trim corrections (adjustable via UI)
 TRIM_VX = 0.0  # Forward/backward trim correction
-TRIM_VY = -0.1  # Left/right trim correction
+TRIM_VY = 0.0  # Left/right trim correction
 
 # Battery monitoring
 LOW_BATTERY_THRESHOLD = 2.9  # Low battery warning threshold in volts
@@ -1173,9 +1173,8 @@ def main():
         global flight_active, sensor_test_active
         flight_active = False
         sensor_test_active = False
+        root.quit()
         root.destroy()
-        import sys
-        sys.exit(0)
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()

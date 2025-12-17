@@ -41,3 +41,7 @@ cache/
 # markdown files
 *.md
 *.md~
+
+# managed_components folder
+managed_components/
+managed_components/*

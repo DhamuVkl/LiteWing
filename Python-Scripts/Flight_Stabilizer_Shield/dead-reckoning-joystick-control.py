@@ -41,13 +41,13 @@ from datetime import datetime
 
 # === CONFIGURATION PARAMETERS ===
 DRONE_URI = "udp://192.168.43.42"
-TARGET_HEIGHT = 0.3  # Target hover height in meters
+TARGET_HEIGHT = 0.4  # Target hover height in meters
 TAKEOFF_TIME = 0.5  # Time to takeoff and stabilize
 LANDING_TIME = 0.5  # Time to land
 DEBUG_MODE = False  # Set to True to disable motors (sensors and logging still work)
 
 # Velocity and control parameters
-VELOCITY_SMOOTHING_ALPHA = 0.9  # Filtering strength for velocity smoothing
+VELOCITY_SMOOTHING_ALPHA = 1.5  # Filtering strength for velocity smoothing
 VELOCITY_THRESHOLD = 0.005  # Consider drone "stationary" below this velocity
 CONTROL_UPDATE_RATE = 0.02  # 50Hz control loop
 SENSOR_PERIOD_MS = 10  # Motion sensor update rate
@@ -55,7 +55,7 @@ DT = SENSOR_PERIOD_MS / 1000.0
 
 # Basic trim corrections (adjustable via UI)
 TRIM_VX = 0.0  # Forward/backward trim correction
-TRIM_VY = -0.1  # Left/right trim correction
+TRIM_VY = 0.0  # Left/right trim correction
 
 # Battery monitoring
 LOW_BATTERY_THRESHOLD = 2.9  # Low battery warning threshold in volts
@@ -1106,9 +1106,8 @@ def main():
         global flight_active, sensor_test_active
         flight_active = False
         sensor_test_active = False
+        root.quit()
         root.destroy()
-        import sys
-        sys.exit(0)
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()

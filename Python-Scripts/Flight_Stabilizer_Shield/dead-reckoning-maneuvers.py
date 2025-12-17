@@ -76,12 +76,12 @@ DEBUG_MODE = False
 VELOCITY_SMOOTHING_ALPHA = 0.9  # Default: 0.7 (previously hardcoded)
 # Basic trim corrections
 TRIM_VX = 0.0  # Forward/backward trim correction
-TRIM_VY = -0.1  # Left/right trim correction
+TRIM_VY = 0.0  # Left/right trim correction
 # Battery monitoring
 LOW_BATTERY_THRESHOLD = 2.9  # Low battery warning threshold in volts
 # Height sensor safety
 HEIGHT_SENSOR_MIN_CHANGE = (
-    0.015  # Minimum height change expected during takeoff (meters)
+    0.005  # Minimum height change expected during takeoff (meters)
 )
 
 # === DEAD RECKONING POSITION CONTROL PARAMETERS ===
@@ -4064,10 +4064,8 @@ def main():
                     pass
         except Exception:
             pass
+        root.quit()
         root.destroy()
-        import sys
-
-        sys.exit(0)
 
     root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
