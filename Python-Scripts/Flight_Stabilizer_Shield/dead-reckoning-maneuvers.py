@@ -121,6 +121,10 @@ JOYSTICK_SENSITIVITY = 0.5  # Default joystick sensitivity (0.1-2.0)
 WAYPOINT_TIMEOUT = 10.0  # Timeout in seconds before advancing to next waypoint (increased for reliability)
 CORNER_PAUSE_DURATION = 0.3  # Pause duration at corners for stabilization (seconds)
 MIN_VELOCITY_THRESHOLD = 0.002  # Minimum velocity to consider stopped at waypoint
+HOP_LANDING_BETWEEN_WAYPOINTS = True  # If True, land at each waypoint corner and take off again for more accurate square pattern
+HOP_LANDING_TIME = 2.0  # Time for landing at waypoint corners (seconds)
+HOP_TAKEOFF_TIME = 2.0  # Time for takeoff from waypoint corners (seconds)
+HOP_GROUND_PAUSE = 1.0  # Pause time on ground between landing and next takeoff (seconds)
 
 # === JOYSTICK MOMENTUM COMPENSATION ===
 # When keys are released in "Hold at Current Position" mode, these parameters help prevent counter-movement
@@ -1221,6 +1225,52 @@ class DeadReckoningGUI:
         )
         self.square_button.pack(side=tk.LEFT, padx=1)
 
+        # Hop-style landing controls frame
+        hop_frame = tk.Frame(maneuver_frame)
+        hop_frame.pack(pady=3, fill=tk.X)
+        
+        # Hop landing checkbox
+        self.hop_landing_var = tk.BooleanVar(value=HOP_LANDING_BETWEEN_WAYPOINTS)
+        self.hop_landing_check = tk.Checkbutton(
+            hop_frame,
+            text="Hop Landing (land at each corner)",
+            variable=self.hop_landing_var,
+            command=self.toggle_hop_landing,
+            font=("Arial", 8),
+        )
+        self.hop_landing_check.pack(anchor=tk.W)
+        
+        # Hop timing controls (compact row)
+        hop_timing_frame = tk.Frame(maneuver_frame)
+        hop_timing_frame.pack(pady=2, fill=tk.X)
+        
+        # Hop Landing Time
+        tk.Label(hop_timing_frame, text="Land:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.hop_land_time_var = tk.StringVar(value=str(HOP_LANDING_TIME))
+        self.hop_land_time_entry = tk.Entry(
+            hop_timing_frame, textvariable=self.hop_land_time_var, width=4, font=("Arial", 8)
+        )
+        self.hop_land_time_entry.pack(side=tk.LEFT, padx=1)
+        tk.Label(hop_timing_frame, text="s", font=("Arial", 8)).pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Hop Takeoff Time
+        tk.Label(hop_timing_frame, text="Takeoff:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.hop_takeoff_time_var = tk.StringVar(value=str(HOP_TAKEOFF_TIME))
+        self.hop_takeoff_time_entry = tk.Entry(
+            hop_timing_frame, textvariable=self.hop_takeoff_time_var, width=4, font=("Arial", 8)
+        )
+        self.hop_takeoff_time_entry.pack(side=tk.LEFT, padx=1)
+        tk.Label(hop_timing_frame, text="s", font=("Arial", 8)).pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Hop Ground Pause
+        tk.Label(hop_timing_frame, text="Pause:", font=("Arial", 8)).pack(side=tk.LEFT)
+        self.hop_ground_pause_var = tk.StringVar(value=str(HOP_GROUND_PAUSE))
+        self.hop_ground_pause_entry = tk.Entry(
+            hop_timing_frame, textvariable=self.hop_ground_pause_var, width=4, font=("Arial", 8)
+        )
+        self.hop_ground_pause_entry.pack(side=tk.LEFT, padx=1)
+        tk.Label(hop_timing_frame, text="s", font=("Arial", 8)).pack(side=tk.LEFT)
+
         # Right side - Joystick Controls (more compact)
         joystick_control_frame = tk.LabelFrame(
             main_controls_frame, text="Joystick Control", padx=5, pady=5
@@ -1425,12 +1475,36 @@ class DeadReckoningGUI:
     def maneuver_square(self):
         """Execute square maneuver"""
         try:
+            # Apply hop values before starting
+            self.apply_hop_values()
             distance = float(self.maneuver_distance_var.get())
             waypoints = self.calculate_square_waypoints(distance)
             self.start_shape_maneuver(waypoints)
-            self.log_to_output(f"Square maneuver initiated: {distance:.2f}m sides")
+            hop_status = "enabled" if HOP_LANDING_BETWEEN_WAYPOINTS else "disabled"
+            self.log_to_output(f"Square maneuver initiated: {distance:.2f}m sides (hop landing: {hop_status})")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
+
+    def toggle_hop_landing(self):
+        """Toggle hop-style landing between waypoints"""
+        global HOP_LANDING_BETWEEN_WAYPOINTS
+        HOP_LANDING_BETWEEN_WAYPOINTS = self.hop_landing_var.get()
+        status = "enabled" if HOP_LANDING_BETWEEN_WAYPOINTS else "disabled"
+        self.log_to_output(f"Hop landing at corners: {status}")
+
+    def apply_hop_values(self):
+        """Apply hop timing values from GUI inputs"""
+        global HOP_LANDING_BETWEEN_WAYPOINTS, HOP_LANDING_TIME, HOP_TAKEOFF_TIME, HOP_GROUND_PAUSE
+        try:
+            HOP_LANDING_BETWEEN_WAYPOINTS = self.hop_landing_var.get()
+            HOP_LANDING_TIME = float(self.hop_land_time_var.get())
+            HOP_TAKEOFF_TIME = float(self.hop_takeoff_time_var.get())
+            HOP_GROUND_PAUSE = float(self.hop_ground_pause_var.get())
+            self.log_to_output(
+                f"Hop values applied: Land={HOP_LANDING_TIME}s, Takeoff={HOP_TAKEOFF_TIME}s, Pause={HOP_GROUND_PAUSE}s"
+            )
+        except ValueError as e:
+            self.log_to_output(f"Error applying hop values: {e}")
 
     def calculate_square_waypoints(self, distance):
         """Calculate waypoints for square pattern"""
@@ -3348,9 +3422,108 @@ class DeadReckoningGUI:
                                 if shape_active:
                                     shape_index += 1
                                     if shape_index < len(shape_waypoints):
-                                        target_position_x, target_position_y = (
-                                            shape_waypoints[shape_index]
-                                        )
+                                        # HOP-STYLE LANDING: Land at current corner before moving to next waypoint
+                                        if HOP_LANDING_BETWEEN_WAYPOINTS and not DEBUG_MODE:
+                                            # === LANDING AT CORNER ===
+                                            flight_phase = f"HOP_LANDING {shape_index}/{len(shape_waypoints)}"
+                                            self.log_to_output(
+                                                f"Hop landing at corner {shape_index}/{len(shape_waypoints)}"
+                                            )
+                                            hop_land_start = time.time()
+                                            while (
+                                                time.time() - hop_land_start < HOP_LANDING_TIME
+                                                and flight_active
+                                            ):
+                                                cf.commander.send_hover_setpoint(TRIM_VX, TRIM_VY, 0, 0)
+                                                log_to_csv()
+                                                time.sleep(0.01)
+                                            
+                                            # Stop motors on ground
+                                            cf.commander.send_setpoint(0, 0, 0, 0)
+                                            
+                                            if not flight_active:
+                                                break
+                                            
+                                            # === PAUSE ON GROUND ===
+                                            flight_phase = f"HOP_GROUND {shape_index}/{len(shape_waypoints)}"
+                                            self.log_to_output(
+                                                f"Ground pause at corner {shape_index}/{len(shape_waypoints)} for {HOP_GROUND_PAUSE}s"
+                                            )
+                                            time.sleep(HOP_GROUND_PAUSE)
+                                            
+                                            if not flight_active:
+                                                break
+                                            
+                                            # Reset position tracking for fresh leg
+                                            reset_position_tracking()
+                                            
+                                            # Calculate relative waypoint from current position (now origin)
+                                            # We need to recalculate remaining waypoints relative to current ground position
+                                            current_wp = shape_waypoints[shape_index - 1]  # Where we just landed
+                                            next_wp = shape_waypoints[shape_index]  # Where we need to go
+                                            # Calculate delta from current position to next waypoint
+                                            delta_x = next_wp[0] - current_wp[0]
+                                            delta_y = next_wp[1] - current_wp[1]
+                                            # Set target relative to new origin (0, 0)
+                                            target_position_x = delta_x
+                                            target_position_y = delta_y
+                                            
+                                            # === TAKEOFF FROM CORNER ===
+                                            flight_phase = f"HOP_TAKEOFF {shape_index+1}/{len(shape_waypoints)}"
+                                            self.log_to_output(
+                                                f"Hop takeoff for leg {shape_index+1}/{len(shape_waypoints)}"
+                                            )
+                                            hop_takeoff_start = time.time()
+                                            while (
+                                                time.time() - hop_takeoff_start < HOP_TAKEOFF_TIME
+                                                and flight_active
+                                            ):
+                                                cf.commander.send_hover_setpoint(
+                                                    TRIM_VX, TRIM_VY, 0, TARGET_HEIGHT
+                                                )
+                                                log_to_csv()
+                                                time.sleep(0.01)
+                                            
+                                            if not flight_active:
+                                                break
+                                            
+                                            # === STABILIZATION AFTER TAKEOFF ===
+                                            flight_phase = f"HOP_STABILIZE {shape_index+1}/{len(shape_waypoints)}"
+                                            self.log_to_output(
+                                                f"Stabilizing for leg {shape_index+1}/{len(shape_waypoints)}"
+                                            )
+                                            hop_stabilize_start = time.time()
+                                            while (
+                                                time.time() - hop_stabilize_start < 2.0  # 2 second stabilization
+                                                and flight_active
+                                            ):
+                                                if use_position_hold and sensor_data_ready:
+                                                    motion_vx, motion_vy = calculate_position_hold_corrections()
+                                                else:
+                                                    motion_vx, motion_vy = 0.0, 0.0
+                                                total_vx = TRIM_VX + motion_vy
+                                                total_vy = TRIM_VY + motion_vx
+                                                cf.commander.send_hover_setpoint(
+                                                    total_vx, total_vy, 0, TARGET_HEIGHT
+                                                )
+                                                log_to_csv()
+                                                time.sleep(CONTROL_UPDATE_RATE)
+                                            
+                                            if not flight_active:
+                                                break
+                                            
+                                            self.log_to_output(
+                                                f"Flying to waypoint {shape_index+1}/{len(shape_waypoints)} at ({target_position_x:.3f}, {target_position_y:.3f})"
+                                            )
+                                        else:
+                                            # Original non-hop behavior
+                                            target_position_x, target_position_y = (
+                                                shape_waypoints[shape_index]
+                                            )
+                                            self.log_to_output(
+                                                f"Moving to waypoint {shape_index+1}/{len(shape_waypoints)} at ({target_position_x:.3f}, {target_position_y:.3f})"
+                                            )
+                                        
                                         waypoint_start_time = (
                                             time.time()
                                         )  # Reset timeout for new waypoint
@@ -3361,9 +3534,6 @@ class DeadReckoningGUI:
                                         position_integral_y = 0.0
 
                                         flight_phase = f"MANEUVER {shape_index+1}/{len(shape_waypoints)}"
-                                        self.log_to_output(
-                                            f"Moving to waypoint {shape_index+1}/{len(shape_waypoints)} at ({target_position_x:.3f}, {target_position_y:.3f})"
-                                        )
                                     else:
                                         shape_active = False
                                         maneuver_active = False
