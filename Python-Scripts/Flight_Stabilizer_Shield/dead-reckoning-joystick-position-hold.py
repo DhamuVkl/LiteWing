@@ -71,7 +71,7 @@ VELOCITY_KD = 0.0
 
 # Control limits
 MAX_CORRECTION = 0.1
-DRIFT_COMPENSATION_RATE = 0.004
+DRIFT_COMPENSATION_RATE = 0.055
 MAX_POSITION_ERROR = 2.0
 
 # Velocity calculation constants
@@ -80,7 +80,7 @@ OPTICAL_FLOW_SCALE = 4.4
 USE_HEIGHT_SCALING = True
 
 # Joystick parameters
-JOYSTICK_SENSITIVITY = 0.9
+JOYSTICK_SENSITIVITY = 0.4
 
 # === GLOBAL VARIABLES ===
 current_height = 0.0
@@ -124,6 +124,7 @@ flight_phase = "IDLE"
 flight_active = False
 sensor_test_active = False
 scf_instance = None
+joystick_mode_active = False  # When True, position integration is disabled
 
 # Data history for plotting
 max_history_points = 200
@@ -208,18 +209,39 @@ def reset_position_tracking():
 
 
 def set_current_position_as_target():
-    """Set current integrated position as new target for position hold"""
+    """Reset position tracking to treat current location as new origin (0,0)"""
+    global integrated_position_x, integrated_position_y
     global target_position_x, target_position_y
     global position_integral_x, position_integral_y
     global last_position_error_x, last_position_error_y
+    global velocity_integral_x, velocity_integral_y
+    global last_velocity_error_x, last_velocity_error_y
+    global current_correction_vx, current_correction_vy
+    global velocity_x_history, velocity_y_history
     
-    target_position_x = integrated_position_x
-    target_position_y = integrated_position_y
-    # Reset PID state for smooth transition
+    # Reset integrated position to zero - current location becomes new origin
+    integrated_position_x = 0.0
+    integrated_position_y = 0.0
+    # Target is also at origin (hold current position)
+    target_position_x = 0.0
+    target_position_y = 0.0
+    # Reset ALL PID state for clean start
     position_integral_x = 0.0
     position_integral_y = 0.0
     last_position_error_x = 0.0
     last_position_error_y = 0.0
+    velocity_integral_x = 0.0
+    velocity_integral_y = 0.0
+    last_velocity_error_x = 0.0
+    last_velocity_error_y = 0.0
+    # Reset corrections
+    current_correction_vx = 0.0
+    current_correction_vy = 0.0
+    # Reset velocity smoothing history to prevent residual artifacts
+    velocity_x_history[0] = 0.0
+    velocity_x_history[1] = 0.0
+    velocity_y_history[0] = 0.0
+    velocity_y_history[1] = 0.0
 
 
 def calculate_position_hold_corrections():
@@ -329,7 +351,8 @@ def motion_callback(timestamp, data, logconf):
 
     current_time = time.time()
     dt = current_time - last_integration_time
-    if 0.001 <= dt <= 0.1 and position_integration_enabled:
+    # Only integrate position during position hold mode (not during joystick mode)
+    if 0.001 <= dt <= 0.1 and position_integration_enabled and not joystick_mode_active:
         integrate_position(current_vx, current_vy, dt)
     last_integration_time = current_time
     update_history()
@@ -1036,6 +1059,7 @@ class JoystickPositionHoldGUI:
         global flight_active, flight_phase
         global current_battery_voltage, battery_data_ready
         global position_integration_enabled
+        global joystick_mode_active
 
         self.root.after(0, self.clear_output)
         self.root.after(0, self.clear_graphs)
@@ -1095,7 +1119,8 @@ class JoystickPositionHoldGUI:
                     log_to_csv("STABILIZING")
                     time.sleep(CONTROL_UPDATE_RATE)
 
-                # Set initial position as target
+                # Set initial position as target and start in position hold mode
+                joystick_mode_active = False  # Start with position hold active
                 set_current_position_as_target()
                 self.log_to_output("Joystick control active - use WASD to move")
                 self.log_to_output("Release keys to hold position")
@@ -1115,6 +1140,10 @@ class JoystickPositionHoldGUI:
                     if any_key_pressed:
                         # JOYSTICK MODE: Direct control
                         if not was_moving:
+                            # First entering joystick mode - reset position tracking
+                            # This clears any accumulated errors before direct control
+                            joystick_mode_active = True  # Disable position integration
+                            set_current_position_as_target()
                             self.log_to_output("Joystick input detected - MOVING")
                             was_moving = True
 
@@ -1138,7 +1167,8 @@ class JoystickPositionHoldGUI:
                     else:
                         # POSITION HOLD MODE: Hold current position
                         if was_moving:
-                            # Just stopped moving - set current position as target
+                            # Just stopped moving - enable position hold
+                            joystick_mode_active = False  # Enable position integration
                             set_current_position_as_target()
                             self.log_to_output("Keys released - POSITION HOLD activated")
                             was_moving = False
