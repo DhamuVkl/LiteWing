@@ -45,15 +45,15 @@ LANDING_TIME = 0.5  # Time to land
 DEBUG_MODE = False  # Set to True to disable motors
 
 # Velocity and control parameters
-VELOCITY_SMOOTHING_ALPHA = 0.9
+VELOCITY_SMOOTHING_ALPHA = 0.75
 VELOCITY_THRESHOLD = 0.005
 CONTROL_UPDATE_RATE = 0.02  # 50Hz control loop
 SENSOR_PERIOD_MS = 10
 DT = SENSOR_PERIOD_MS / 1000.0
 
 # Basic trim corrections
-TRIM_VX = 0.0
-TRIM_VY = 0.0
+TRIM_VX = -0.15
+TRIM_VY = -0.1
 
 # Battery monitoring
 LOW_BATTERY_THRESHOLD = 2.9
@@ -70,8 +70,8 @@ VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
 
 # Control limits
-MAX_CORRECTION = 0.1
-DRIFT_COMPENSATION_RATE = 0.055
+MAX_CORRECTION = 0.13
+DRIFT_COMPENSATION_RATE = 0.25
 MAX_POSITION_ERROR = 2.0
 
 # Velocity calculation constants
@@ -925,7 +925,7 @@ class JoystickPositionHoldGUI:
         current_battery_voltage = 0.0
         battery_data_ready = False
 
-        cflib.crtp.init_drivers()
+        # cflib.crtp.init_drivers()  # Removed: Drivers initialized in main()
         cf = Crazyflie(rw_cache="./cache")
         log_motion = None
         log_battery = None
@@ -1064,7 +1064,7 @@ class JoystickPositionHoldGUI:
         self.root.after(0, self.clear_output)
         self.root.after(0, self.clear_graphs)
 
-        cflib.crtp.init_drivers()
+        # cflib.crtp.init_drivers()  # Removed: Drivers initialized in main()
         cf = Crazyflie(rw_cache="./cache")
         log_motion = None
         log_battery = None
@@ -1149,6 +1149,9 @@ class JoystickPositionHoldGUI:
 
                         joystick_vx = 0.0
                         joystick_vy = 0.0
+
+                        # TODO: For smoother flight, map keys to VELOCITY TARGETS (e.g. target_vx = 0.5)
+                        # and keep PID running, instead of sending raw trim + sensitivity.
 
                         if self.joystick_keys["w"]:
                             joystick_vy += sensitivity
