@@ -53,6 +53,8 @@ import math
 from datetime import datetime
 import os
 from PIL import Image, ImageTk
+from collections import deque
+import threading
 
 
 # === CONSTANTS ===
@@ -200,21 +202,24 @@ shape_waypoints = []
 shape_index = 0
 waypoint_start_time = 0.0
 # Data history for plotting
-max_history_points = 200
-time_history = []
-velocity_x_history_plot = []
-velocity_y_history_plot = []
-position_x_history = []
-position_y_history = []
-correction_vx_history = []
-correction_vy_history = []
-height_history = []
-# Complete trajectory history (never trimmed)
+max_history_points = 300  # Increased for better visualization
+time_history = deque(maxlen=max_history_points)
+velocity_x_history_plot = deque(maxlen=max_history_points)
+velocity_y_history_plot = deque(maxlen=max_history_points)
+position_x_history = deque(maxlen=max_history_points)
+position_y_history = deque(maxlen=max_history_points)
+correction_vx_history = deque(maxlen=max_history_points)
+correction_vy_history = deque(maxlen=max_history_points)
+height_history = deque(maxlen=max_history_points)
+
+# Complete trajectory history (never trimmed for data, but downsampled for UI)
+MAX_PLOT_TRAJECTORY_POINTS = 5000  # Limit points drawn on 2D plot to prevent lag
 complete_trajectory_x = []
 complete_trajectory_y = []
 key_release_points = []  # Store (x, y) tuples of release points
 start_time = None
 neo_controller = None
+data_lock = threading.Lock()  # Protect shared data structures
 # Debug counter for motion callback
 debug_counter = 0
 
@@ -633,33 +638,26 @@ def calculate_position_hold_corrections():
 
 
 def update_history():
-    """Update data history for plotting"""
+    """Update data history for plotting (Thread-Safe)"""
     global start_time
     if start_time is None:
         start_time = time.time()
     current_time = time.time() - start_time
-    # Add new data points
-    time_history.append(current_time)
-    velocity_x_history_plot.append(current_vx)
-    velocity_y_history_plot.append(current_vy)
-    position_x_history.append(integrated_position_x)
-    position_y_history.append(integrated_position_y)
-    correction_vx_history.append(current_correction_vx)
-    correction_vy_history.append(current_correction_vy)
-    height_history.append(current_height)
-    # Add to complete trajectory (never trimmed)
-    complete_trajectory_x.append(integrated_position_x)
-    complete_trajectory_y.append(integrated_position_y)
-    # Trim history to max points
-    if len(time_history) > max_history_points:
-        time_history.pop(0)
-        velocity_x_history_plot.pop(0)
-        velocity_y_history_plot.pop(0)
-        position_x_history.pop(0)
-        position_y_history.pop(0)
-        correction_vx_history.pop(0)
-        correction_vy_history.pop(0)
-        height_history.pop(0)
+    
+    with data_lock:
+        # Add new data points (deques handle trimming automatically)
+        time_history.append(current_time)
+        velocity_x_history_plot.append(current_vx)
+        velocity_y_history_plot.append(current_vy)
+        position_x_history.append(integrated_position_x)
+        position_y_history.append(integrated_position_y)
+        correction_vx_history.append(current_correction_vx)
+        correction_vy_history.append(current_correction_vy)
+        height_history.append(current_height)
+        
+        # Add to complete trajectory
+        complete_trajectory_x.append(integrated_position_x)
+        complete_trajectory_y.append(integrated_position_y)
 
 
 def motion_callback(timestamp, data, logconf):
@@ -2523,9 +2521,41 @@ class DeadReckoningGUI:
         self.fig.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.05)
 
     def update_plots(self, frame):
-        """Update all plots with new data"""
+        """Update all plots with new data (highly optimized and thread-safe)"""
         if not time_history:
             return []
+
+        # Local snapshots for thread-safe plotting
+        with data_lock:
+            # Convert deques to numpy arrays for faster processing
+            t_hist = np.array(time_history)
+            vx_hist = np.array(velocity_x_history_plot)
+            vy_hist = np.array(velocity_y_history_plot)
+            h_hist = np.array(height_history)
+            corr_vx_hist = np.array(correction_vx_history)
+            corr_vy_hist = np.array(correction_vy_history)
+            
+            # Trajectory downsampling for long flights
+            total_traj_pts = len(complete_trajectory_x)
+            if total_traj_pts > MAX_PLOT_TRAJECTORY_POINTS:
+                step = total_traj_pts // MAX_PLOT_TRAJECTORY_POINTS
+                traj_x = np.array(complete_trajectory_x[::step])
+                traj_y = np.array(complete_trajectory_y[::step])
+            else:
+                traj_x = np.array(complete_trajectory_x)
+                traj_y = np.array(complete_trajectory_y)
+            
+            # Current values for UI
+            cur_h = current_height
+            cur_vx = current_vx
+            cur_vy = current_vy
+            cur_pos_x = integrated_position_x
+            cur_pos_y = integrated_position_y
+            cur_corr_vx = current_correction_vx
+            cur_corr_vy = current_correction_vy
+            
+            # Key release points snapshot
+            rel_points = list(key_release_points)
 
         # Check for stale sensor data (visual only)
         is_stale = False
@@ -2535,137 +2565,95 @@ class DeadReckoningGUI:
 
         # Update real-time value displays
         stale_msg = " (STALE!)" if is_stale else ""
-        self.height_var.set(f"Height: {current_height:.3f}m{stale_msg}")
+        self.height_var.set(f"Height: {cur_h:.3f}m{stale_msg}")
         self.phase_var.set(f"Phase: {flight_phase}")
-        # Update battery voltage with color coding
+        
         if current_battery_voltage > 0:
-            if current_battery_voltage < LOW_BATTERY_THRESHOLD:
-                battery_color = "red"
-                battery_status = " (LOW!)"
-            elif current_battery_voltage < 3.5:
-                battery_color = "orange"
-                battery_status = " (Warning)"
-            else:
-                battery_color = "green"
-                battery_status = ""
-            self.battery_var.set(
-                f"Battery: {current_battery_voltage:.2f}V{battery_status}"
-            )
+            status = " (LOW!)" if current_battery_voltage < LOW_BATTERY_THRESHOLD else ""
+            self.battery_var.set(f"Battery: {current_battery_voltage:.2f}V{status}")
         else:
             self.battery_var.set("Battery: N/A")
-        self.vx_var.set(f"VX: {current_vx:.3f} m/s{stale_msg}")
-        self.vy_var.set(f"VY: {current_vy:.3f} m/s{stale_msg}")
-        self.pos_x_var.set(f"Position X: {integrated_position_x:.3f}m{stale_msg}")
-        self.pos_y_var.set(f"Position Y: {integrated_position_y:.3f}m{stale_msg}")
-        self.corr_vx_var.set(f"Correction VX: {current_correction_vx:.3f}")
-        self.corr_vy_var.set(f"Correction VY: {current_correction_vy:.3f}")
+            
+        self.vx_var.set(f"VX: {cur_vx:.3f} m/s{stale_msg}")
+        self.vy_var.set(f"VY: {cur_vy:.3f} m/s{stale_msg}")
+        self.pos_x_var.set(f"Position X: {cur_pos_x:.3f}m{stale_msg}")
+        self.pos_y_var.set(f"Position Y: {cur_pos_y:.3f}m{stale_msg}")
+        self.corr_vx_var.set(f"Correction VX: {cur_corr_vx:.3f}")
+        self.corr_vy_var.set(f"Correction VY: {cur_corr_vy:.3f}")
 
-        # Low battery alert
-        if current_battery_voltage > 0 and current_battery_voltage <= 3.3:
-            if not self.blinking:
-                self.low_battery_blink_start()
+        # Low battery blinking (visual only)
+        if 0 < current_battery_voltage <= 3.3:
+            if not self.blinking: self.low_battery_blink_start()
         elif current_battery_voltage > 3.3 and self.low_battery_blinking:
             self.low_battery_blink_stop()
 
         # Update plots
         try:
-            # Velocities
-            self.line_vx.set_data(time_history, velocity_x_history_plot)
-            self.line_vy.set_data(time_history, velocity_y_history_plot)
+            # 1. Velocities
+            self.line_vx.set_data(t_hist, vx_hist)
+            self.line_vy.set_data(t_hist, vy_hist)
 
-            # 2D Position - use complete trajectory (never trimmed)
-            if complete_trajectory_x and complete_trajectory_y:
-                # Fix coordinate system: negate X for correct visualization
-                plot_x = [-x for x in complete_trajectory_x]
-                self.line_pos.set_data(plot_x, complete_trajectory_y)
-                self.current_pos.set_data(
-                    [-integrated_position_x], [integrated_position_y]
-                )
-
+            # 2. 2D Position
+            if len(traj_x) > 0:
+                self.line_pos.set_data(-traj_x, traj_y)
+                self.current_pos.set_data([-cur_pos_x], [cur_pos_y])
+                
                 # Update release points scatter
-                if key_release_points:
-                    # Fix coordinate system: negate X for correct visualization
-                    rx = [-p[0] for p in key_release_points]
-                    ry = [p[1] for p in key_release_points]
+                if rel_points:
+                    rx = [-p[0] for p in rel_points]
+                    ry = [p[1] for p in rel_points]
                     self.release_points_scatter.set_data(rx, ry)
                 else:
                     self.release_points_scatter.set_data([], [])
 
-            # Control corrections
-            self.line_corr_vx.set_data(time_history, correction_vx_history)
-            self.line_corr_vy.set_data(time_history, correction_vy_history)
+            # 3. Control corrections
+            self.line_corr_vx.set_data(t_hist, corr_vx_hist)
+            self.line_corr_vy.set_data(t_hist, corr_vy_hist)
 
-            # Height
-            self.line_height.set_data(time_history, height_history)
+            # 4. Height
+            self.line_height.set_data(t_hist, h_hist)
 
-            # Adjust axis limits
-            if len(time_history) > 1:
-                time_range = max(time_history) - min(time_history)
-                time_margin = time_range * 0.05
-                # Time-based plots
-                for ax in [self.ax1, self.ax3, self.ax4]:
-                    ax.set_xlim(
-                        min(time_history) - time_margin, max(time_history) + time_margin
-                    )
+            # --- Smart Axis Scaling ---
+            if len(t_hist) > 1:
+                t_min, t_max = t_hist[0], t_hist[-1]
+                
+                # Time axis (X)
+                cur_xmin, cur_xmax = self.ax1.get_xlim()
+                if t_max > cur_xmax - (cur_xmax-cur_xmin)*0.1 or t_min < cur_xmin:
+                    margin = (t_max - t_min) * 0.1
+                    for ax in [self.ax1, self.ax3, self.ax4]:
+                        ax.set_xlim(t_min, t_max + margin)
 
-                # Velocity plot
-                if velocity_x_history_plot and velocity_y_history_plot:
-                    all_vel = velocity_x_history_plot + velocity_y_history_plot
-                    if any(v != 0 for v in all_vel):
-                        vel_range = max(all_vel) - min(all_vel)
-                        vel_margin = max(vel_range * 0.1, 0.01)
-                        self.ax1.set_ylim(
-                            min(all_vel) - vel_margin, max(all_vel) + vel_margin
-                        )
+                # Velocity Y-axis
+                v_all = np.concatenate([vx_hist, vy_hist])
+                v_min, v_max = v_all.min(), v_all.max()
+                v_margin = max((v_max - v_min) * 0.1, 0.05)
+                self.ax1.set_ylim(v_min - v_margin, v_max + v_margin)
 
-                # Position plot - use complete trajectory for axis limits
-                if complete_trajectory_x and complete_trajectory_y:
-                    # Fix coordinate system for axis limits too
-                    plot_x = [-x for x in complete_trajectory_x]
-                    pos_range_x = max(plot_x) - min(plot_x)
-                    pos_range_y = max(complete_trajectory_y) - min(
-                        complete_trajectory_y
-                    )
-                    max_range = max(pos_range_x, pos_range_y, 0.02)  # Minimum range
-                    center_x = (max(plot_x) + min(plot_x)) / 2
-                    center_y = (
-                        max(complete_trajectory_y) + min(complete_trajectory_y)
-                    ) / 2
-                    margin = max_range * 0.6
-                    self.ax2.set_xlim(center_x - margin, center_x + margin)
-                    self.ax2.set_ylim(center_y - margin, center_y + margin)
+                # Position plot (Centered on trajectory)
+                if len(traj_x) > 0:
+                    px_min, px_max = -traj_x.max(), -traj_x.min()
+                    py_min, py_max = traj_y.min(), traj_y.max()
+                    range_x, range_y = px_max - px_min, py_max - py_min
+                    max_r = max(range_x, range_y, 0.1)
+                    cx, cy = (px_min + px_max) / 2, (py_min + py_max) / 2
+                    m = max_r * 0.7
+                    self.ax2.set_xlim(cx - m, cx + m)
+                    self.ax2.set_ylim(cy - m, cy + m)
 
-                # Control corrections
-                if correction_vx_history and correction_vy_history:
-                    all_corr = correction_vx_history + correction_vy_history
-                    if any(c != 0 for c in all_corr):
-                        corr_range = max(all_corr) - min(all_corr)
-                        corr_margin = max(corr_range * 0.1, 0.01)
-                        self.ax3.set_ylim(
-                            min(all_corr) - corr_margin, max(all_corr) + corr_margin
-                        )
+                # Corrections Y-axis
+                c_all = np.concatenate([corr_vx_hist, corr_vy_hist])
+                c_min, c_max = c_all.min(), c_all.max()
+                c_margin = max((c_max - c_min) * 0.1, 0.01)
+                self.ax3.set_ylim(c_min - c_margin, c_max + c_margin)
 
-                # Height plot
-                if height_history:
-                    height_range = max(height_history) - min(height_history)
-                    height_margin = max(height_range * 0.1, 0.05)
-                    self.ax4.set_ylim(
-                        min(height_history) - height_margin,
-                        max(height_history) + height_margin,
-                    )
-
-                # Update the target height line on the height plot
-                self.ax4.collections = []  # Clear previous target line
-                self.ax4.axhline(
-                    y=float(self.target_height_var.get()),
-                    color="red",
-                    linestyle="--",
-                    alpha=0.7,
-                    label="Target",
-                )
+                # Height Y-axis
+                h_min, h_max = h_hist.min(), h_hist.max()
+                h_margin = max((h_max - h_min) * 0.1, 0.05)
+                self.ax4.set_ylim(h_min - h_margin, h_max + h_margin)
 
         except Exception as e:
-            pass  # Ignore plotting errors
+            pass # Plotting error (usually frame sync)
 
         return []
 
