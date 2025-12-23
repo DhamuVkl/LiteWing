@@ -51,6 +51,9 @@ import numpy as np
 import csv
 import math
 from datetime import datetime
+import os
+from PIL import Image, ImageTk
+
 
 # === CONSTANTS ===
 # CRTP and NeoPixel constants
@@ -941,6 +944,24 @@ class DeadReckoningGUI:
         # Control panel
         control_frame = tk.Frame(self.root)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        # Load and display logo in top right
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            logo_path = os.path.join(script_dir, "litewing_logo.png")
+            if os.path.exists(logo_path):
+                pil_img = Image.open(logo_path)
+                # Resize logo to a reasonable size (e.g., height of 40px)
+                aspect_ratio = pil_img.width / pil_img.height
+                new_height = 60
+                new_width = int(new_height * aspect_ratio)
+                pil_img = pil_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                self.logo_img = ImageTk.PhotoImage(pil_img)
+                self.logo_label = tk.Label(control_frame, image=self.logo_img)
+                self.logo_label.pack(side=tk.RIGHT, padx=10)
+        except Exception as e:
+            print(f"Error loading logo: {e}")
+
 
         # Flight control buttons
         self.start_button = tk.Button(
