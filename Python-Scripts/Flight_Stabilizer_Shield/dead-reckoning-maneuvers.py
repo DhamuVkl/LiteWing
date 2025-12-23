@@ -150,6 +150,8 @@ current_height = 0.0
 motion_delta_x = 0
 motion_delta_y = 0
 sensor_data_ready = False
+last_sensor_heartbeat = time.time()  # Track last received packet
+DATA_TIMEOUT_THRESHOLD = 0.5        # Max allowed time between sensor packets (seconds)
 # Log file
 log_file = None
 log_writer = None
@@ -236,6 +238,32 @@ def log_message(message):
             print(message)
     else:
         print(message)
+
+
+def check_link_safety(cf, logger=None):
+    """
+    Check if the Crazyflie is still connected and sensor data is fresh.
+    Returns True if safe, False otherwise.
+    """
+    global flight_active, sensor_test_active
+
+    # 1. Connection check
+    if not cf.is_connected():
+        if logger:
+            logger("CRITICAL: Crazyflie disconnected!")
+        return False
+
+    # 2. Sensor heartbeat check (only if not in debug mode)
+    if not DEBUG_MODE and sensor_data_ready:
+        elapsed_since_last_data = time.time() - last_sensor_heartbeat
+        if elapsed_since_last_data > DATA_TIMEOUT_THRESHOLD:
+            if logger:
+                logger(
+                    f"CRITICAL: Sensor data timeout! ({elapsed_since_last_data:.2f}s delay)"
+                )
+            return False
+
+    return True
 
 
 # === HELPER FUNCTIONS ===
@@ -462,9 +490,11 @@ def reset_position_tracking():
     global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time, position_integration_enabled
     global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
     global last_position_error_x, last_position_error_y, last_velocity_error_x, last_velocity_error_y
+    global last_sensor_heartbeat
     integrated_position_x = 0.0
     integrated_position_y = 0.0
     last_integration_time = time.time()
+    last_sensor_heartbeat = time.time()
     last_reset_time = time.time()
     position_integration_enabled = True
     # Reset PID state
@@ -635,8 +665,11 @@ def update_history():
 def motion_callback(timestamp, data, logconf):
     """Motion sensor data callback"""
     global current_height, motion_delta_x, motion_delta_y, sensor_data_ready
-    global current_vx, current_vy, last_integration_time
+    global current_vx, current_vy, last_integration_time, last_sensor_heartbeat
     global debug_counter
+
+    # Update heartbeat immediately
+    last_sensor_heartbeat = time.time()
 
     # Get sensor data
     current_height = data.get("stateEstimate.z", 0)
@@ -2494,8 +2527,15 @@ class DeadReckoningGUI:
         if not time_history:
             return []
 
+        # Check for stale sensor data (visual only)
+        is_stale = False
+        if not DEBUG_MODE and sensor_data_ready:
+            if time.time() - last_sensor_heartbeat > 1.0:
+                is_stale = True
+
         # Update real-time value displays
-        self.height_var.set(f"Height: {current_height:.3f}m")
+        stale_msg = " (STALE!)" if is_stale else ""
+        self.height_var.set(f"Height: {current_height:.3f}m{stale_msg}")
         self.phase_var.set(f"Phase: {flight_phase}")
         # Update battery voltage with color coding
         if current_battery_voltage > 0:
@@ -2513,10 +2553,10 @@ class DeadReckoningGUI:
             )
         else:
             self.battery_var.set("Battery: N/A")
-        self.vx_var.set(f"VX: {current_vx:.3f} m/s")
-        self.vy_var.set(f"VY: {current_vy:.3f} m/s")
-        self.pos_x_var.set(f"Position X: {integrated_position_x:.3f}m")
-        self.pos_y_var.set(f"Position Y: {integrated_position_y:.3f}m")
+        self.vx_var.set(f"VX: {current_vx:.3f} m/s{stale_msg}")
+        self.vy_var.set(f"VY: {current_vy:.3f} m/s{stale_msg}")
+        self.pos_x_var.set(f"Position X: {integrated_position_x:.3f}m{stale_msg}")
+        self.pos_y_var.set(f"Position Y: {integrated_position_y:.3f}m{stale_msg}")
         self.corr_vx_var.set(f"Correction VX: {current_correction_vx:.3f}")
         self.corr_vy_var.set(f"Correction VY: {current_correction_vy:.3f}")
 
@@ -3139,6 +3179,11 @@ class DeadReckoningGUI:
                 if self.enable_sensor_logging_var.get():
                     init_csv_logging(logger=self.log_to_output)
                 while sensor_test_active:  # Continue while sensor test is active
+                    # Safety check: link and sensor stale
+                    if not check_link_safety(cf, logger=self.log_to_output):
+                        sensor_test_active = False
+                        break
+
                     # Calculate corrections (they will be 0 if PID params are 0, but still updates internal state)
                     if use_position_hold and sensor_data_ready:
                         motion_vx, motion_vy = calculate_position_hold_corrections()
@@ -3356,6 +3401,11 @@ class DeadReckoningGUI:
                 height_sensor_min_change = HEIGHT_SENSOR_MIN_CHANGE
 
                 while time.time() - start_time < TAKEOFF_TIME and flight_active:
+                    # Safety check: link and sensor stale
+                    if not check_link_safety(cf, logger=self.log_to_output):
+                        flight_active = False
+                        break
+
                     # Debug logging every 0.1 seconds to show height sensor status
                     elapsed_takeoff_time = time.time() - start_time
                     current_height_change = current_height - takeoff_height_start
@@ -3419,6 +3469,11 @@ class DeadReckoningGUI:
                     time.time() - stabilization_start < stabilization_duration
                     and flight_active
                 ):
+                    # Safety check: link and sensor stale
+                    if not check_link_safety(cf, logger=self.log_to_output):
+                        flight_active = False
+                        break
+
                     # HEIGHT SENSOR SAFETY CHECK: Detect stuck/frozen height sensor during stabilization
                     stabilization_elapsed = (
                         time.time() - stabilization_height_check_start
@@ -3468,6 +3523,11 @@ class DeadReckoningGUI:
                     corner_pause_start = None  # Track corner pause timing
 
                     while flight_active:
+                        # Safety check: link and sensor stale
+                        if not check_link_safety(cf, logger=self.log_to_output):
+                            flight_active = False
+                            break
+
                         if use_position_hold and sensor_data_ready:
                             motion_vx, motion_vy = calculate_position_hold_corrections()
                             # Check if maneuver complete (close to target)
@@ -3536,6 +3596,11 @@ class DeadReckoningGUI:
                                                 time.time() - hop_land_start < HOP_LANDING_TIME
                                                 and flight_active
                                             ):
+                                                # Safety check: link and sensor stale
+                                                if not check_link_safety(cf, logger=self.log_to_output):
+                                                    flight_active = False
+                                                    break
+
                                                 cf.commander.send_hover_setpoint(TRIM_VX, TRIM_VY, 0, 0)
                                                 log_to_csv()
                                                 time.sleep(0.01)
@@ -3580,6 +3645,11 @@ class DeadReckoningGUI:
                                                 time.time() - hop_takeoff_start < HOP_TAKEOFF_TIME
                                                 and flight_active
                                             ):
+                                                # Safety check: link and sensor stale
+                                                if not check_link_safety(cf, logger=self.log_to_output):
+                                                    flight_active = False
+                                                    break
+
                                                 if use_position_hold and sensor_data_ready and current_height > 0.05:
                                                     motion_vx, motion_vy = calculate_position_hold_corrections()
                                                 else:
@@ -3927,6 +3997,11 @@ class DeadReckoningGUI:
                 height_sensor_min_change = HEIGHT_SENSOR_MIN_CHANGE
 
                 while time.time() - start_time < TAKEOFF_TIME and self.joystick_active:
+                    # Safety check: link and sensor stale
+                    if not check_link_safety(cf, logger=self.log_to_output):
+                        self.joystick_active = False
+                        break
+
                     # Debug logging every 0.1 seconds to show height sensor status
                     elapsed_takeoff_time = time.time() - start_time
                     current_height_change = current_height - takeoff_height_start
@@ -3986,6 +4061,11 @@ class DeadReckoningGUI:
                     time.time() - stabilization_start < stabilization_duration
                     and self.joystick_active
                 ):
+                    # Safety check: link and sensor stale
+                    if not check_link_safety(cf, logger=self.log_to_output):
+                        self.joystick_active = False
+                        break
+
                     # HEIGHT SENSOR SAFETY CHECK: Detect stuck/frozen height sensor during stabilization
                     stabilization_elapsed = (
                         time.time() - stabilization_height_check_start
@@ -4036,6 +4116,11 @@ class DeadReckoningGUI:
                 key_release_time = 0.0
 
                 while self.joystick_active:
+                    # Safety check: link and sensor stale
+                    if not check_link_safety(cf, logger=self.log_to_output):
+                        self.joystick_active = False
+                        break
+
                     current_time_loop = time.time()
                     dt = current_time_loop - last_loop_time
                     last_loop_time = current_time_loop
