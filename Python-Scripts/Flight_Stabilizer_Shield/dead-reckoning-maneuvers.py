@@ -3039,6 +3039,14 @@ class DeadReckoningGUI:
         self.root.after(0, lambda: self.clear_output())
         self.root.after(0, lambda: self.clear_graphs())
 
+        # Reset position immediately to update GUI (fix reset delay)
+        integrated_position_x = 0.0
+        integrated_position_y = 0.0
+        last_integration_time = time.time()
+        # Reset PID state as well
+        position_integral_x = 0.0
+        position_integral_y = 0.0
+
         sensor_test_active = True
         flight_phase = "SENSOR_TEST"  # Update phase
 
@@ -3235,6 +3243,14 @@ class DeadReckoningGUI:
         # Clear previous run data at start of new flight
         self.root.after(0, lambda: self.clear_output())
         self.root.after(0, lambda: self.clear_graphs())
+
+        # Reset position immediately to update GUI (fix reset delay)
+        integrated_position_x = 0.0
+        integrated_position_y = 0.0
+        last_integration_time = time.time()
+        # Reset PID state as well
+        position_integral_x = 0.0
+        position_integral_y = 0.0
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
@@ -3792,6 +3808,14 @@ class DeadReckoningGUI:
         # Clear previous run data at start of new joystick control
         self.root.after(0, lambda: self.clear_output())
         self.root.after(0, lambda: self.clear_graphs())
+
+        # Reset position immediately to update GUI (fix reset delay)
+        integrated_position_x = 0.0
+        integrated_position_y = 0.0
+        last_integration_time = time.time()
+        # Reset PID state as well
+        position_integral_x = 0.0
+        position_integral_y = 0.0
 
         cflib.crtp.init_drivers()
         cf = Crazyflie(rw_cache="./cache")
