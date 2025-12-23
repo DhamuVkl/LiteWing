@@ -69,14 +69,14 @@ DRONE_URI = "udp://192.168.43.42"
 TARGET_HEIGHT = 0.3  # Target hover height in meters
 TAKEOFF_TIME = 1.5  # Time to takeoff and stabilize
 HOVER_DURATION = 10.0  # How long to hover with position hold
-LANDING_TIME = 1.5  # Time to land
+LANDING_TIME = 0.5  # Time to land
 # Debug mode - set to True to disable motors (sensors and logging still work)
 DEBUG_MODE = False
 # Filtering strength for velocity smoothing (0.0 = no smoothing, 1.0 = max smoothing)
 VELOCITY_SMOOTHING_ALPHA = 0.85  # Default: 0.7 (previously hardcoded)
 # Basic trim corrections
-TRIM_VX = -0.05  # Forward/backward trim correction
-TRIM_VY = -0.1  # Left/right trim correction
+TRIM_VX = 0.0  # Forward/backward trim correction
+TRIM_VY = 0.0  # Left/right trim correction
 # Battery monitoring
 LOW_BATTERY_THRESHOLD = 2.9  # Low battery warning threshold in volts
 # Height sensor safety
@@ -90,11 +90,11 @@ HEIGHT_SENSOR_MIN_CHANGE = (
 POSITION_KP = 1.2
 POSITION_KI = 0.0
 POSITION_KD = 0.0
-VELOCITY_KP = 1.2
+VELOCITY_KP = 0.5
 VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
 # Control limits
-MAX_CORRECTION = 0.1  # Maximum control correction allowed
+MAX_CORRECTION = 0.5  # Maximum control correction allowed
 VELOCITY_THRESHOLD = 0.005  # Consider drone "stationary" below this velocity
 DRIFT_COMPENSATION_RATE = 0.004  # Gentle pull toward zero when moving slowly
 # Position integration and reset
@@ -3306,8 +3306,19 @@ class DeadReckoningGUI:
                         )
 
                     if not DEBUG_MODE:
+                        # Enable control corrections during takeoff if height is sufficient (> 5cm)
+                        # This prevents drift during the 1.5s takeoff phase
+                        if use_position_hold and sensor_data_ready and current_height > 0.05:
+                            motion_vx, motion_vy = calculate_position_hold_corrections()
+                        else:
+                            motion_vx, motion_vy = 0.0, 0.0
+                        
+                        # Apply corrections (TRIM + PID output)
+                        total_vx = TRIM_VX + motion_vy
+                        total_vy = TRIM_VY + motion_vx
+                        
                         cf.commander.send_hover_setpoint(
-                            TRIM_VX, TRIM_VY, 0, TARGET_HEIGHT
+                            total_vx, total_vy, 0, TARGET_HEIGHT
                         )  # Use global TARGET_HEIGHT
                     log_to_csv()
                     time.sleep(0.01)
