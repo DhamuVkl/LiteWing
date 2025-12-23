@@ -940,6 +940,7 @@ class DeadReckoningGUI:
             "s": False,
             "d": False,
         }
+        self._joystick_debug_counter = 0  # Counter for throttling debug logs
 
         self.create_ui()
         self.setup_plots()
@@ -4123,6 +4124,7 @@ class DeadReckoningGUI:
                 # Variables for smooth key release handling and visualization
                 keys_were_pressed = False
                 key_release_time = 0.0
+                self._joystick_debug_counter = 0  # Reset debug counter for new session
 
                 while self.joystick_active:
                     # Safety check: link and sensor stale
