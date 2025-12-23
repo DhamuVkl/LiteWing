@@ -79,6 +79,8 @@ LANDING_TIME = 0.5  # Time to land
 DEBUG_MODE = False
 # Filtering strength for velocity smoothing (0.0 = no smoothing, 1.0 = max smoothing)
 VELOCITY_SMOOTHING_ALPHA = 0.85  # Default: 0.7 (previously hardcoded)
+# CSV Logging - set to False to disable CSV file generation
+DRONE_CSV_LOGGING = True
 # Basic trim corrections
 TRIM_VX = 0.0  # Forward/backward trim correction
 TRIM_VY = 0.0  # Left/right trim correction
@@ -842,6 +844,8 @@ def setup_logging(cf, logger=None):
 def init_csv_logging(logger=None):
     """Initialize CSV logging for position and height"""
     global log_file, log_writer
+    if not DRONE_CSV_LOGGING:
+        return
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"drone_flight_log_{timestamp}.csv"
     log_file = open(log_filename, mode="w", newline="")
@@ -869,7 +873,7 @@ def init_csv_logging(logger=None):
 def log_to_csv():
     """Log current state to CSV if logging is active"""
     global log_writer, start_time
-    if log_writer is None or start_time is None:
+    if not DRONE_CSV_LOGGING or log_writer is None or start_time is None:
         return
     elapsed = time.time() - start_time
     log_writer.writerow(
@@ -1049,6 +1053,16 @@ class DeadReckoningGUI:
             command=self.toggle_debug_mode,
         )
         self.enable_debug_mode_check.pack(side=tk.TOP, anchor=tk.W)
+        
+        # Primary CSV logging toggle
+        self.enable_csv_logging_var = tk.BooleanVar(value=DRONE_CSV_LOGGING)
+        self.enable_csv_logging_check = tk.Checkbutton(
+            checkboxes_frame,
+            text="Enable CSV Logging",
+            variable=self.enable_csv_logging_var,
+            command=self.toggle_csv_logging,
+        )
+        self.enable_csv_logging_check.pack(side=tk.TOP, anchor=tk.W)
 
         # Blink NeoPixel button - New button
         self.blink_button = tk.Button(
@@ -2130,6 +2144,13 @@ class DeadReckoningGUI:
             self.status_var.set(f"Status: NeoPixel error - {str(e)}")
             print(f"NeoPixel error: {e}")
             self.log_to_output(f"NeoPixel Error: {str(e)}")
+
+    def toggle_csv_logging(self):
+        """Toggle CSV logging state"""
+        global DRONE_CSV_LOGGING
+        DRONE_CSV_LOGGING = self.enable_csv_logging_var.get()
+        status = "ENABLED" if DRONE_CSV_LOGGING else "DISABLED"
+        self.log_to_output(f"CSV Logging {status}")
 
     def set_leds_color(self, r, g, b):
         """Set a stable color on the NeoPixels (stops blinking first)."""
