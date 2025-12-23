@@ -97,7 +97,7 @@ VELOCITY_KP = 0.5
 VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
 # Control limits
-MAX_CORRECTION = 0.5  # Maximum control correction allowed
+MAX_CORRECTION = 0.9  # Maximum control correction allowed
 VELOCITY_THRESHOLD = 0.005  # Consider drone "stationary" below this velocity
 DRIFT_COMPENSATION_RATE = 0.004  # Gentle pull toward zero when moving slowly
 # Position integration and reset
@@ -648,15 +648,15 @@ def motion_callback(timestamp, data, logconf):
     raw_velocity_y = calculate_velocity(motion_delta_y, current_height)
 
     # Debug output every 100 callbacks (reduce console spam)
-    debug_counter += 1
-    if debug_counter % 100 == 0 and (
-        abs(motion_delta_x) > 0 or abs(motion_delta_y) > 0
-    ):
-        print(
-            f"Sensor Debug - Height: {current_height:.3f}m, "
-            f"Raw Motion: X={motion_delta_x}, Y={motion_delta_y}, "
-            f"Velocities: X={raw_velocity_x:.4f}, Y={raw_velocity_y:.4f}"
-        )
+    # debug_counter += 1
+    # if debug_counter % 100 == 0 and (
+    #     abs(motion_delta_x) > 0 or abs(motion_delta_y) > 0
+    # ):
+    #     print(
+    #         f"Sensor Debug - Height: {current_height:.3f}m, "
+    #         f"Raw Motion: X={motion_delta_x}, Y={motion_delta_y}, "
+    #         f"Velocities: X={raw_velocity_x:.4f}, Y={raw_velocity_y:.4f}"
+    #     )
 
     # Apply smoothing
     current_vx = smooth_velocity(raw_velocity_x, velocity_x_history)
@@ -3557,8 +3557,16 @@ class DeadReckoningGUI:
                                                 time.time() - hop_takeoff_start < HOP_TAKEOFF_TIME
                                                 and flight_active
                                             ):
+                                                if use_position_hold and sensor_data_ready and current_height > 0.05:
+                                                    motion_vx, motion_vy = calculate_position_hold_corrections()
+                                                else:
+                                                    motion_vx, motion_vy = 0.0, 0.0
+                                                
+                                                total_vx = TRIM_VX + motion_vy
+                                                total_vy = TRIM_VY + motion_vx
+                                                
                                                 cf.commander.send_hover_setpoint(
-                                                    TRIM_VX, TRIM_VY, 0, TARGET_HEIGHT
+                                                    total_vx, total_vy, 0, TARGET_HEIGHT
                                                 )
                                                 log_to_csv()
                                                 time.sleep(0.01)
@@ -3909,8 +3917,17 @@ class DeadReckoningGUI:
                         )
 
                     if not DEBUG_MODE:
+                        # Enable control corrections during takeoff if height is sufficient (> 5cm)
+                        if use_position_hold and sensor_data_ready and current_height > 0.05:
+                            motion_vx, motion_vy = calculate_position_hold_corrections()
+                        else:
+                            motion_vx, motion_vy = 0.0, 0.0
+                        
+                        total_vx = TRIM_VX + motion_vy
+                        total_vy = TRIM_VY + motion_vx
+
                         cf.commander.send_hover_setpoint(
-                            TRIM_VX, TRIM_VY, 0, TARGET_HEIGHT
+                            total_vx, total_vy, 0, TARGET_HEIGHT
                         )
                     log_to_csv()
                     time.sleep(0.01)
