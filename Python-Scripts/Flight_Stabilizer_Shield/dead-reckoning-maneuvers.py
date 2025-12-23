@@ -210,6 +210,7 @@ height_history = []
 # Complete trajectory history (never trimmed)
 complete_trajectory_x = []
 complete_trajectory_y = []
+key_release_points = []  # Store (x, y) tuples of release points
 start_time = None
 neo_controller = None
 # Debug counter for motion callback
@@ -2435,6 +2436,15 @@ class DeadReckoningGUI:
             markeredgecolor="black",
             label="Origin",
         )
+        (self.release_points_scatter,) = self.ax2.plot(
+            [],
+            [],
+            "x",
+            markersize=10,
+            markeredgewidth=2,
+            color="orange",
+            label="Release Pts",
+        )
         self.ax2.legend()
 
         # Control corrections plot
@@ -2531,6 +2541,15 @@ class DeadReckoningGUI:
                 self.current_pos.set_data(
                     [-integrated_position_x], [integrated_position_y]
                 )
+
+                # Update release points scatter
+                if key_release_points:
+                    # Fix coordinate system: negate X for correct visualization
+                    rx = [-p[0] for p in key_release_points]
+                    ry = [p[1] for p in key_release_points]
+                    self.release_points_scatter.set_data(rx, ry)
+                else:
+                    self.release_points_scatter.set_data([], [])
 
             # Control corrections
             self.line_corr_vx.set_data(time_history, correction_vx_history)
@@ -2904,7 +2923,9 @@ class DeadReckoningGUI:
         correction_vy_history.clear()
         height_history.clear()
         complete_trajectory_x.clear()
+        complete_trajectory_x.clear()
         complete_trajectory_y.clear()
+        key_release_points.clear()
 
         # Reset start time
         start_time = None
@@ -2916,6 +2937,8 @@ class DeadReckoningGUI:
             self.line_vy.set_data([], [])
         if hasattr(self, "line_pos"):
             self.line_pos.set_data([], [])
+        if hasattr(self, "release_points_scatter"):
+            self.release_points_scatter.set_data([], [])
         if hasattr(self, "line_corr_vx"):
             self.line_corr_vx.set_data([], [])
         if hasattr(self, "line_corr_vy"):
@@ -3786,7 +3809,7 @@ class DeadReckoningGUI:
                         "Joystick mode: Hold at Current Position - will maintain position when released"
                     )
 
-                maneuver_active = True  # Enable position hold
+                maneuver_active = False  # Disable maneuver damping for sharper joystick response
 
                 # Force focus to the window for key events
                 self.root.focus_force()
@@ -4005,12 +4028,20 @@ class DeadReckoningGUI:
                 # Joystick control loop
                 flight_phase = "JOYSTICK_CONTROL"
 
-                # Variables for smooth key release handling
+                # Previous time for dt calculation
+                last_loop_time = time.time()
+                
+                # Variables for smooth key release handling and visualization
                 keys_were_pressed = False
                 key_release_time = 0.0
 
                 while self.joystick_active:
-                    # Calculate direct velocity commands based on pressed keys
+                    current_time_loop = time.time()
+                    dt = current_time_loop - last_loop_time
+                    last_loop_time = current_time_loop
+                    if dt > 0.1: dt = 0.1 # Cap dt to prevent jumps on lag
+
+                    # 1. Get Joystick Input
                     sensitivity = float(self.joystick_sensitivity_var.get())
                     joystick_vx = 0.0
                     joystick_vy = 0.0
@@ -4019,131 +4050,84 @@ class DeadReckoningGUI:
                         joystick_vy += sensitivity
                     if self.joystick_keys["s"]:  # Backward (negative Y)
                         joystick_vy -= sensitivity
-                    if self.joystick_keys["a"]:  # Left (positive X - corrected)
+                    if self.joystick_keys["a"]:  # Left (positive X)
                         joystick_vx += sensitivity
-                    if self.joystick_keys["d"]:  # Right (negative X - corrected)
+                    if self.joystick_keys["d"]:  # Right (negative X)
                         joystick_vx -= sensitivity
 
-                    # Check if any keys are pressed
                     any_keys_pressed = any(self.joystick_keys.values())
 
-                    # Detect key release transition
+                    # Check key release for visualization
                     if keys_were_pressed and not any_keys_pressed:
-                        # Keys just released - mark the time and reset PID integrals
-                        key_release_time = time.time()
-
-                        # Reset PID integral terms to prevent overshoot
-                        position_integral_x = 0.0
-                        position_integral_y = 0.0
-                        velocity_integral_x = 0.0
-                        velocity_integral_y = 0.0
-
-                        # In current position mode, set target ahead slightly to compensate for momentum
-                        if not self.joystick_hold_at_origin:
-                            # Predict where drone will be after momentum dissipates
-                            # Use current velocity to estimate stopping position
-                            # Note: current_vx and current_vy are in sensor coordinates
-                            # Position integration also uses sensor coordinates, so they match
-                            target_position_x = integrated_position_x + (
-                                current_vx * MOMENTUM_COMPENSATION_TIME
-                            )
-                            target_position_y = integrated_position_y + (
-                                current_vy * MOMENTUM_COMPENSATION_TIME
-                            )
-
-                            self.log_to_output(
-                                f"Key released - Pos:({integrated_position_x:.3f},{integrated_position_y:.3f}) "
-                                f"Vel:({current_vx:.3f},{current_vy:.3f}) "
-                                f"Target:({target_position_x:.3f},{target_position_y:.3f})"
-                            )
-
+                         key_release_points.append((integrated_position_x, integrated_position_y))
+                         self.log_to_output(f"Keys released - Holding target at ({target_position_x:.2f}, {target_position_y:.2f})")
                     keys_were_pressed = any_keys_pressed
 
-                    # Check if we're in settling period after key release
-                    time_since_release = (
-                        time.time() - key_release_time if key_release_time > 0 else 999
-                    )
-                    in_settling_period = time_since_release < SETTLING_DURATION
 
-                    # For joystick control, we use direct velocity commands
-                    if use_position_hold and sensor_data_ready and not any_keys_pressed:
-                        if in_settling_period:
-                            # During settling period, use gentler corrections
-                            # Calculate normal corrections
-                            motion_vx, motion_vy = calculate_position_hold_corrections()
-                            # Reduce correction strength during settling
-                            motion_vx *= SETTLING_CORRECTION_FACTOR
-                            motion_vy *= SETTLING_CORRECTION_FACTOR
-
-                            # Debug logging during settling
-                            if not hasattr(self, "_settling_log_counter"):
-                                self._settling_log_counter = 0
-                            self._settling_log_counter += 1
-                            if self._settling_log_counter % 10 == 0:
-                                self.log_to_output(
-                                    f"Settling ({time_since_release:.2f}s) - "
-                                    f"Corr:({motion_vx:.3f},{motion_vy:.3f}) "
-                                    f"Vel:({current_vx:.3f},{current_vy:.3f}) "
-                                    f"PosErr:({integrated_position_x-target_position_x:.3f},{integrated_position_y-target_position_y:.3f})"
-                                )
-                        else:
-                            # Normal position hold corrections after settling
-                            motion_vx, motion_vy = calculate_position_hold_corrections()
-
-                            # Debug logging after settling (less frequent)
-                            if not hasattr(self, "_hold_log_counter"):
-                                self._hold_log_counter = 0
-                            self._hold_log_counter += 1
-                            if self._hold_log_counter % 50 == 0:
-                                self.log_to_output(
-                                    f"Holding - "
-                                    f"Corr:({motion_vx:.3f},{motion_vy:.3f}) "
-                                    f"Vel:({current_vx:.3f},{current_vy:.3f}) "
-                                    f"PosErr:({integrated_position_x-target_position_x:.3f},{integrated_position_y-target_position_y:.3f})"
-                                )
-                    else:
-                        # Use direct joystick velocity when keys are pressed
-                        motion_vx, motion_vy = joystick_vx, joystick_vy
-
-                        # Update target position based on hold mode (only while moving)
-                        if self.joystick_hold_at_origin:
-                            # Hold at Origin mode: Target always remains at (0, 0)
+                    # 2. Update Target Position (Target Integration)
+                    if use_position_hold and sensor_data_ready:
+                        # Move target based on joystick input (Closed-Loop Velocity Control)
+                        if not self.joystick_hold_at_origin: # "Hold at Current" Mode (Flying Mode)
+                            target_position_x += joystick_vx * dt
+                            target_position_y += joystick_vy * dt
+                            
+                            # Clamp Target to prevent integral windup if drone is stuck or lagging
+                            dx = target_position_x - integrated_position_x
+                            dy = target_position_y - integrated_position_y
+                            if abs(dx) > MAX_POSITION_ERROR:
+                                target_position_x = integrated_position_x + math.copysign(MAX_POSITION_ERROR, dx)
+                            if abs(dy) > MAX_POSITION_ERROR:
+                                target_position_y = integrated_position_y + math.copysign(MAX_POSITION_ERROR, dy)
+                                
+                        else: # "Hold at Origin" Mode (Spring Mode)
                             target_position_x = 0.0
                             target_position_y = 0.0
-                        else:
-                            # Hold at Current Position mode: Target follows current position while moving
-                            target_position_x = integrated_position_x
-                            target_position_y = integrated_position_y
 
-                        # Debug logging every 50 iterations to verify position update
-                        if hasattr(self, "_joystick_debug_counter"):
-                            self._joystick_debug_counter += 1
-                        else:
-                            self._joystick_debug_counter = 0
+                        # 3. Calculate PID Corrections (Always Active)
+                        motion_vx, motion_vy = calculate_position_hold_corrections()
+                    else:
+                        motion_vx, motion_vy = 0.0, 0.0
 
-                        if self._joystick_debug_counter % 50 == 0:
-                            mode_text = (
-                                "Origin" if self.joystick_hold_at_origin else "Current"
-                            )
-                            self.log_to_output(
-                                f"Joystick [{mode_text}] Moving - "
-                                f"Joy:({joystick_vx:.2f},{joystick_vy:.2f}) "
-                                f"Vel:({current_vx:.3f},{current_vy:.3f}) "
-                                f"Pos:({integrated_position_x:.3f},{integrated_position_y:.3f}) "
-                                f"Target:({target_position_x:.3f},{target_position_y:.3f})"
-                            )
-
+                    # 4. Combine Outputs (Feedforward + Feedback)
+                    # Feedforward: Joystick input (immediate response)
+                    # Feedback: PID output (correction for drift/error)
+                    
+                    # Store for CSV logging
+                    current_correction_vx = motion_vx
+                    current_correction_vy = motion_vy
+                    
                     log_to_csv()
-
+                    
                     # Apply corrections (note: axes swapped for Crazyflie coordinate system)
-                    total_vx = TRIM_VX + motion_vy  # joystick_vy becomes motion_vx
-                    total_vy = TRIM_VY + motion_vx  # joystick_vx becomes motion_vy
+                    # Mapping: Global Y (Forward) -> Drone X (Forward) ?
+                    # Wait, calculating 'total_vx' (Command 1) and 'total_vy' (Command 2)
+                    
+                    # Original Code Logic Preservation: 
+                    # total_vx = TRIM + motion_vy (which was joystick_vy)
+                    # total_vy = TRIM + motion_vx (which was joystick_vx)
+                    
+                    # New Logic:
+                    # We want to add Feedforward Joystick Terms to the same channels.
+                    # If motion_vy maps to Channel 1 (VX), then joystick_vy should also map to Channel 1 (VX).
+                    
+                    total_vx = TRIM_VX + motion_vy + joystick_vy
+                    total_vy = TRIM_VY + motion_vx + joystick_vx
+                    
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(
                             total_vx, total_vy, 0, TARGET_HEIGHT
                         )
-
+                    
                     time.sleep(CONTROL_UPDATE_RATE)
+
+                    # Debug logging
+                    if self._joystick_debug_counter % 50 == 0 and any_keys_pressed:
+                         self.log_to_output(
+                            f"Joy:({joystick_vx:.2f},{joystick_vy:.2f}) "
+                            f"Tgt:({target_position_x:.2f},{target_position_y:.2f}) "
+                            f"Pos:({integrated_position_x:.2f},{integrated_position_y:.2f})"
+                        )
+                    self._joystick_debug_counter += 1
 
                 # Landing when joystick control stops
                 flight_phase = "JOYSTICK_LANDING"
