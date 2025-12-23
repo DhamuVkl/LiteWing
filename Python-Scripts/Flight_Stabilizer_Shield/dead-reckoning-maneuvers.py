@@ -67,16 +67,16 @@ NP_LINK_SETUP_DELAY = 0.12
 # === CONFIGURATION PARAMETERS ===
 DRONE_URI = "udp://192.168.43.42"
 TARGET_HEIGHT = 0.3  # Target hover height in meters
-TAKEOFF_TIME = 0.5  # Time to takeoff and stabilize
+TAKEOFF_TIME = 1.5  # Time to takeoff and stabilize
 HOVER_DURATION = 10.0  # How long to hover with position hold
-LANDING_TIME = 0.5  # Time to land
+LANDING_TIME = 1.5  # Time to land
 # Debug mode - set to True to disable motors (sensors and logging still work)
 DEBUG_MODE = False
 # Filtering strength for velocity smoothing (0.0 = no smoothing, 1.0 = max smoothing)
-VELOCITY_SMOOTHING_ALPHA = 0.9  # Default: 0.7 (previously hardcoded)
+VELOCITY_SMOOTHING_ALPHA = 0.85  # Default: 0.7 (previously hardcoded)
 # Basic trim corrections
-TRIM_VX = 0.0  # Forward/backward trim correction
-TRIM_VY = 0.0  # Left/right trim correction
+TRIM_VX = -0.05  # Forward/backward trim correction
+TRIM_VY = -0.1  # Left/right trim correction
 # Battery monitoring
 LOW_BATTERY_THRESHOLD = 2.9  # Low battery warning threshold in volts
 # Height sensor safety
@@ -2837,11 +2837,35 @@ class DeadReckoningGUI:
             self.status_var.set("Status: Output window not available")
 
     def log_to_output(self, message):
-        """Log a message to the output window"""
+        """Log a message to the output window (Thread-Safe)"""
+        # Check if we are on the main thread
+        if threading.current_thread() is threading.main_thread():
+            self._log_internal(message)
+        else:
+            # Schedule update on main thread
+            self.root.after(0, lambda: self._log_internal(message))
+
+    def _log_internal(self, message):
+        """Internal logging method intended to run on main thread"""
         if hasattr(self, "output_text") and self.output_text is not None:
             timestamp = time.strftime("%H:%M:%S")
-            self.output_text.insert(tk.END, f"[{timestamp}] {message}\n")
-            self.output_text.see(tk.END)  # Auto-scroll to bottom
+            try:
+                self.output_text.insert(tk.END, f"[{timestamp}] {message}\n")
+                self.output_text.see(tk.END)  # Auto-scroll to bottom
+            except Exception:
+                pass  # Ignore tkinter errors if window is destroying
+
+    def update_status(self, message):
+        """Thread-safe status update"""
+        self.root.after(0, lambda: self.status_var.set(message))
+
+    def update_button(self, button, **kwargs):
+        """Thread-safe button configuration update"""
+        self.root.after(0, lambda: button.config(**kwargs))
+
+    def safe_set_var(self, variable, value):
+        """Thread-safe variable set"""
+        self.root.after(0, lambda: variable.set(value))
 
     def clear_graphs(self):
         """Clear all graph data and reset plotting"""
@@ -3032,9 +3056,9 @@ class DeadReckoningGUI:
                 scf_instance = scf
                 # Enable NeoPixel controls now that a Crazyflie link is established
                 try:
-                    self.blink_button.config(state=tk.NORMAL)
-                    self.clear_leds_button.config(state=tk.NORMAL)
-                    self.set_color_button.config(state=tk.NORMAL)
+                    self.update_button(self.blink_button, state=tk.NORMAL)
+                    self.update_button(self.clear_leds_button, state=tk.NORMAL)
+                    self.update_button(self.set_color_button, state=tk.NORMAL)
                 except Exception:
                     pass
                 # Setup logging (same as flight)
@@ -3092,19 +3116,23 @@ class DeadReckoningGUI:
                 except:
                     pass
             # Disable NeoPixel controls when sensor test stops
+            # Disable NeoPixel controls when sensor test stops
             try:
-                self.blink_button.config(state=tk.DISABLED)
-                self.clear_leds_button.config(state=tk.DISABLED)
-                self.set_color_button.config(state=tk.DISABLED)
+                self.update_button(self.blink_button, state=tk.DISABLED)
+                self.update_button(self.clear_leds_button, state=tk.DISABLED)
+                self.update_button(self.set_color_button, state=tk.DISABLED)
             except Exception:
                 pass
             sensor_test_active = False
             flight_phase = "IDLE"
             self.sensor_test_running = False
-            self.sensor_test_button.config(
-                text="Sensor Test", command=self.start_sensor_test, bg="lightblue"
+            self.update_button(
+                self.sensor_test_button,
+                text="Sensor Test",
+                command=self.start_sensor_test,
+                bg="lightblue",
             )
-            self.status_var.set("Status: Sensor Test Stopped")
+            self.update_status("Status: Sensor Test Stopped")
 
     def start_flight(self):
         """Start the flight in a separate thread with battery and sensor safety checks"""
@@ -3620,13 +3648,16 @@ class DeadReckoningGUI:
                     pass
             flight_active = False
             self.flight_running = False
-            self.start_button.config(
-                text="Start Flight", command=self.start_flight, bg="green"
+            self.update_button(
+                self.start_button,
+                text="Start Flight",
+                command=self.start_flight,
+                bg="green",
             )
             if flight_phase != "COMPLETE":
-                self.status_var.set(f"Status: {flight_phase}")
+                self.update_status(f"Status: {flight_phase}")
             else:
-                self.status_var.set("Status: Flight Complete")
+                self.update_status("Status: Flight Complete")
 
     def start_joystick_control(self):
         """Start joystick control using keyboard input"""
