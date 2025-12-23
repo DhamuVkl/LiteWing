@@ -88,7 +88,7 @@ HEIGHT_SENSOR_MIN_CHANGE = (
 # PID Controller Parameters
 # Start here, then increase gradually
 POSITION_KP = 1.2
-POSITION_KI = 0.0
+POSITION_KI = 0.01
 POSITION_KD = 0.0
 VELOCITY_KP = 0.5
 VELOCITY_KI = 0.0
@@ -3247,6 +3247,9 @@ class DeadReckoningGUI:
         # Reset position immediately to update GUI (fix reset delay)
         integrated_position_x = 0.0
         integrated_position_y = 0.0
+        # Implicitly reset target position to origin for standard flight
+        target_position_x = 0.0
+        target_position_y = 0.0
         last_integration_time = time.time()
         # Reset PID state as well
         position_integral_x = 0.0
