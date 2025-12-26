@@ -4054,11 +4054,11 @@ class DeadReckoningGUI:
 
     def on_key_press(self, event):
         """Handle key press events for joystick control"""
-        # Emergency stop with Enter key (works anytime)
-        if event.keysym in ("Return", "KP_Enter"):
+        # Emergency stop with Enter or Escape key (works anytime)
+        if event.keysym in ("Return", "KP_Enter", "Escape"):
             self.emergency_stop()
             self.log_to_output(
-                "EMERGENCY STOP: Enter key pressed - all systems stopped"
+                f"EMERGENCY STOP: {event.keysym} key pressed - all systems stopped"
             )
             return
 
