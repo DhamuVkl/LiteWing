@@ -125,6 +125,7 @@ USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 MANEUVER_DISTANCE = 0.5  # Default distance
 MANEUVER_THRESHOLD = 0.05  # Within 5cm is close enough
 WAYPOINT_TIMEOUT = 30.0  # Seconds
+WAYPOINT_STABILIZATION_TIME = 0.5  # Seconds to hover at each corner
 JOYSTICK_SENSITIVITY = 0.5
 
 # === JOYSTICK MOMENTUM COMPENSATION ===
@@ -1476,18 +1477,26 @@ class DeadReckoningGUI:
 
     def maneuver_square(self):
         """Execute square maneuver"""
-    # Hop functions removed for simplification
+        try:
+            distance = float(self.maneuver_distance_var.get())
+            # 1. Reset origin to "Here" first
+            reset_position_tracking() 
+            # 2. Calculate waypoints for square pattern (Right -> Forward -> Left -> Home)
+            # +X=Left, -X=Right, +Y=Forward, -Y=Backward
+            waypoints = [
+                (-distance, 0.0),        # Stage 1: Move Right
+                (-distance, distance),   # Stage 2: Move Forward
+                (0.0, distance),        # Stage 3: Move Left
+                (0.0, 0.0)              # Stage 4: Back Home
+            ]
+            self.start_shape_maneuver(waypoints)
+            self.log_to_output(f"Maneuver: Square {distance:.2f}m initiated")
+        except ValueError:
+            self.status_var.set("Status: Invalid maneuver distance")
 
     def calculate_square_waypoints(self, distance):
-        """Calculate waypoints for square pattern"""
-        x = integrated_position_x
-        y = integrated_position_y
-        return [
-            (x + distance, y),
-            (x + distance, y + distance),
-            (x, y + distance),
-            (x, y),
-        ]
+        """Calculate waypoints for square pattern (deprecated - logic moved to maneuver_square)"""
+        return []
 
     def start_shape_maneuver(self, waypoints):
         """Start a shape maneuver with waypoints or update current flight"""
@@ -3455,6 +3464,8 @@ class DeadReckoningGUI:
 
                 # Position hold hover or maneuver - Main Loop
                 hover_start_time = None
+                waypoint_arrival_time = None  # Track when we reach a corner
+                
                 while flight_active:
                     if maneuver_active:
                         flight_phase = "MISSION"
@@ -3472,21 +3483,32 @@ class DeadReckoningGUI:
                             if int(time.time() * 2) % 4 == 0:
                                 self.log_to_output(f"MISSION: Dist={distance_to_target:.3f}m, Target=({target_position_x:.2f}, {target_position_y:.2f})")
 
-                            # Check completion
+                            # Check completion and handle stabilization
                             if distance_to_target < MANEUVER_THRESHOLD:
-                                if shape_active and shape_index < len(shape_waypoints) - 1:
-                                    shape_index += 1
-                                    target_position_x, target_position_y = shape_waypoints[shape_index]
-                                    self.log_to_output(f"Waypoint {shape_index} reached. Moving to ({target_position_x:.2f}, {target_position_y:.2f})")
-                                    # Reset integrals for next leg
-                                    position_integral_x = 0.0
-                                    position_integral_y = 0.0
-                                else:
-                                    self.log_to_output(f"Mission target reached at ({integrated_position_x:.2f}, {integrated_position_y:.2f})!")
-                                    maneuver_active = False
-                                    shape_active = False
-                                    # When mission ends, we'll enter HOVER mode in next iteration
-                                    hover_start_time = time.time() # Start hover timer
+                                if waypoint_arrival_time is None:
+                                    waypoint_arrival_time = time.time()
+                                    self.log_to_output(f"Waypoint {shape_index if shape_active else ''} reached! Stabilizing for {WAYPOINT_STABILIZATION_TIME}s...")
+                                
+                                # Wait for stabilization time
+                                if time.time() - waypoint_arrival_time >= WAYPOINT_STABILIZATION_TIME:
+                                    waypoint_arrival_time = None # Reset for next waypoint
+                                    
+                                    if shape_active and shape_index < len(shape_waypoints) - 1:
+                                        shape_index += 1
+                                        target_position_x, target_position_y = shape_waypoints[shape_index]
+                                        self.log_to_output(f"Moving to next waypoint: ({target_position_x:.2f}, {target_position_y:.2f})")
+                                        # Reset integrals for next leg
+                                        position_integral_x = 0.0
+                                        position_integral_y = 0.0
+                                    else:
+                                        self.log_to_output(f"Mission target reached at ({integrated_position_x:.2f}, {integrated_position_y:.2f})!")
+                                        maneuver_active = False
+                                        shape_active = False
+                                        # When mission ends, we'll enter HOVER mode in next iteration
+                                        hover_start_time = time.time() # Start hover timer
+                            else:
+                                # Still moving toward target, reset arrival time if we drift away
+                                waypoint_arrival_time = None 
                         else:
                             motion_vx, motion_vy = 0.0, 0.0
 
