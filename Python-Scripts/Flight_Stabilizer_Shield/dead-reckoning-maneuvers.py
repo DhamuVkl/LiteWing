@@ -469,7 +469,7 @@ def periodic_position_reset():
     return False
 
 
-def reset_position_tracking():
+def reset_position_tracking(reset_integrals=True):
     """Reset integrated position tracking to prevent sensor drift"""
     global integrated_position_x, integrated_position_y, last_integration_time, last_reset_time, position_integration_enabled
     global position_integral_x, position_integral_y, velocity_integral_x, velocity_integral_y
@@ -481,15 +481,17 @@ def reset_position_tracking():
     last_sensor_heartbeat = time.time()
     last_reset_time = time.time()
     position_integration_enabled = True
-    # Reset PID state
-    position_integral_x = 0.0
-    position_integral_y = 0.0
-    velocity_integral_x = 0.0
-    velocity_integral_y = 0.0
-    last_position_error_x = 0.0
-    last_position_error_y = 0.0
-    last_velocity_error_x = 0.0
-    last_velocity_error_y = 0.0
+    
+    if reset_integrals:
+        # Reset PID state - Use this only at the very start of a flight
+        position_integral_x = 0.0
+        position_integral_y = 0.0
+        velocity_integral_x = 0.0
+        velocity_integral_y = 0.0
+        last_position_error_x = 0.0
+        last_position_error_y = 0.0
+        last_velocity_error_x = 0.0
+        last_velocity_error_y = 0.0
 
 
 def calculate_position_hold_corrections(target_x=None, target_y=None):
@@ -1416,8 +1418,8 @@ class DeadReckoningGUI:
         try:
             distance = float(self.maneuver_distance_var.get())
             # For directional buttons, we want exactly 'distance' from 'here'
-            # Reset first, then set the absolute distance as the target
-            reset_position_tracking() 
+            # Reset position but keep learned auto-trim (integrals)
+            reset_position_tracking(reset_integrals=False) 
             new_target_x = 0.0
             new_target_y = distance
             
@@ -1430,7 +1432,8 @@ class DeadReckoningGUI:
         """Execute backward maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            reset_position_tracking()
+            # Reset position but keep learned auto-trim (integrals)
+            reset_position_tracking(reset_integrals=False)
             new_target_x = 0.0
             new_target_y = -distance
             
@@ -1443,7 +1446,8 @@ class DeadReckoningGUI:
         """Execute left maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            reset_position_tracking()
+            # Reset position but keep learned auto-trim (integrals)
+            reset_position_tracking(reset_integrals=False)
             new_target_x = distance
             new_target_y = 0.0
             
@@ -1456,7 +1460,8 @@ class DeadReckoningGUI:
         """Execute right maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            reset_position_tracking()
+            # Reset position but keep learned auto-trim (integrals)
+            reset_position_tracking(reset_integrals=False)
             new_target_x = -distance
             new_target_y = 0.0
             
@@ -1479,8 +1484,8 @@ class DeadReckoningGUI:
         """Execute square maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            # 1. Reset origin to "Here" first
-            reset_position_tracking() 
+            # 1. Reset origin to "Here" first, but keep the learned auto-trim (integrals)
+            reset_position_tracking(reset_integrals=False) 
             # 2. Calculate waypoints for square pattern (Right -> Forward -> Left -> Home)
             # +X=Left, -X=Right, +Y=Forward, -Y=Backward
             waypoints = [
@@ -3497,9 +3502,8 @@ class DeadReckoningGUI:
                                         shape_index += 1
                                         target_position_x, target_position_y = shape_waypoints[shape_index]
                                         self.log_to_output(f"Moving to next waypoint: ({target_position_x:.2f}, {target_position_y:.2f})")
-                                        # Reset integrals for next leg
-                                        position_integral_x = 0.0
-                                        position_integral_y = 0.0
+                                        # Do NOT reset integrals for next leg to preserve auto-trim balance
+                                        reset_position_tracking(reset_integrals=False)
                                     else:
                                         self.log_to_output(f"Mission target reached at ({integrated_position_x:.2f}, {integrated_position_y:.2f})!")
                                         maneuver_active = False
