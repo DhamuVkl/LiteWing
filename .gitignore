@@ -38,9 +38,9 @@ cache/
 # workspace settings
 *.code-workspace
 
-# markdown files
-*.md
-*.md~
+# # markdown files
+# *.md
+# *.md~
 
 # managed_components folder
 managed_components/

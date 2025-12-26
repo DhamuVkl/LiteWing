@@ -97,9 +97,9 @@ HEIGHT_SENSOR_MIN_CHANGE = (
 # PID Controller Parameters
 # Start here, then increase gradually
 POSITION_KP = 1.2
-POSITION_KI = 0.01
+POSITION_KI = 0.05  # Increased from 0.01 for better drift correction
 POSITION_KD = 0.0
-VELOCITY_KP = 0.5
+VELOCITY_KP = 0.6   # Increased from 0.5 for better damping
 VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
 # Control limits
@@ -1414,11 +1414,14 @@ class DeadReckoningGUI:
         """Execute forward maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            # Target is relative to current estimated position
-            new_target_x = integrated_position_x + 0.0
-            new_target_y = integrated_position_y + distance
+            # For directional buttons, we want exactly 'distance' from 'here'
+            # Reset first, then set the absolute distance as the target
+            reset_position_tracking() 
+            new_target_x = 0.0
+            new_target_y = distance
+            
             self.start_maneuver(new_target_x, new_target_y)
-            self.log_to_output(f"Maneuver initiated: Forward {distance:.2f}m")
+            self.log_to_output(f"Maneuver: Forward {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1426,11 +1429,12 @@ class DeadReckoningGUI:
         """Execute backward maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            # Target is relative to current estimated position
-            new_target_x = integrated_position_x + 0.0
-            new_target_y = integrated_position_y - distance
+            reset_position_tracking()
+            new_target_x = 0.0
+            new_target_y = -distance
+            
             self.start_maneuver(new_target_x, new_target_y)
-            self.log_to_output(f"Maneuver initiated: Backward {distance:.2f}m")
+            self.log_to_output(f"Maneuver: Backward {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1438,11 +1442,12 @@ class DeadReckoningGUI:
         """Execute left maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            # Target is relative to current estimated position
-            new_target_x = integrated_position_x + distance
-            new_target_y = integrated_position_y + 0.0
+            reset_position_tracking()
+            new_target_x = distance
+            new_target_y = 0.0
+            
             self.start_maneuver(new_target_x, new_target_y)
-            self.log_to_output(f"Maneuver initiated: Left {distance:.2f}m")
+            self.log_to_output(f"Maneuver: Left {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
@@ -1450,11 +1455,12 @@ class DeadReckoningGUI:
         """Execute right maneuver"""
         try:
             distance = float(self.maneuver_distance_var.get())
-            # Target is relative to current estimated position
-            new_target_x = integrated_position_x - distance
-            new_target_y = integrated_position_y + 0.0
+            reset_position_tracking()
+            new_target_x = -distance
+            new_target_y = 0.0
+            
             self.start_maneuver(new_target_x, new_target_y)
-            self.log_to_output(f"Maneuver initiated: Right {distance:.2f}m")
+            self.log_to_output(f"Maneuver: Right {distance:.2f}m")
         except ValueError:
             self.status_var.set("Status: Invalid maneuver distance")
 
