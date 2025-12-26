@@ -72,7 +72,7 @@ NP_LINK_SETUP_DELAY = 0.12
 # === CONFIGURATION PARAMETERS ===
 DRONE_URI = "udp://192.168.43.42"
 TARGET_HEIGHT = 0.3  # Target hover height in meters
-TAKEOFF_TIME = 1.5  # Time to takeoff and stabilize
+TAKEOFF_TIME = 1.0  # Time to takeoff and stabilize (reduced for steeper ramp)
 HOVER_DURATION = 10.0  # How long to hover with position hold
 LANDING_TIME = 0.5  # Time to land
 # Debug mode - set to True to disable motors (sensors and logging still work)
@@ -3440,11 +3440,17 @@ class DeadReckoningGUI:
                         total_vx = TRIM_VX + motion_vy
                         total_vy = TRIM_VY + motion_vx
                         
+                        # SMOOTH TAKEOFF RAMP: Gradually increase height target to minimize bouncing
+                        # Calculate progress (0.0 to 1.0)
+                        takeoff_progress = min(1.0, elapsed_takeoff_time / TAKEOFF_TIME)
+                        # Ramp from current ground height to target height
+                        command_height = takeoff_height_start + (TARGET_HEIGHT - takeoff_height_start) * takeoff_progress
+                        
                         cf.commander.send_hover_setpoint(
-                            total_vx, total_vy, 0, TARGET_HEIGHT
-                        )  # Use global TARGET_HEIGHT
+                            total_vx, total_vy, 0, command_height
+                        )
                     log_to_csv()
-                    time.sleep(0.01)
+                    time.sleep(CONTROL_UPDATE_RATE)
 
                 # POST-TAKEOFF SAFETY CHECK: Verify height sensor worked during full takeoff period
                 takeoff_duration = time.time() - start_time
