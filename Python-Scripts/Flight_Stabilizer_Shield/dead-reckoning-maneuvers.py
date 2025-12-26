@@ -77,6 +77,8 @@ HOVER_DURATION = 10.0  # How long to hover with position hold
 LANDING_TIME = 0.5  # Time to land
 # Debug mode - set to True to disable motors (sensors and logging still work)
 DEBUG_MODE = False
+# Height sensor safety check - set to False to disable emergency stop during takeoff/stabilized
+ENABLE_HEIGHT_SENSOR_SAFETY = False 
 # Filtering strength for velocity smoothing (0.0 = no smoothing, 1.0 = max smoothing)
 VELOCITY_SMOOTHING_ALPHA = 0.85  # Default: 0.7 (previously hardcoded)
 # CSV Logging - set to False to disable CSV file generation
@@ -101,7 +103,7 @@ VELOCITY_KP = 0.5
 VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
 # Control limits
-MAX_CORRECTION = 0.9  # Maximum control correction allowed
+MAX_CORRECTION = 0.7  # Maximum control correction allowed
 VELOCITY_THRESHOLD = 0.005  # Consider drone "stationary" below this velocity
 DRIFT_COMPENSATION_RATE = 0.004  # Gentle pull toward zero when moving slowly
 # Position integration and reset
@@ -3456,7 +3458,7 @@ class DeadReckoningGUI:
                 takeoff_duration = time.time() - start_time
                 final_height_change = current_height - takeoff_height_start
 
-                if final_height_change < height_sensor_min_change and not DEBUG_MODE:
+                if ENABLE_HEIGHT_SENSOR_SAFETY and final_height_change < height_sensor_min_change and not DEBUG_MODE:
                     # Height sensor appears stuck despite full takeoff thrust period - emergency stop
                     emergency_msg = (
                         f"EMERGENCY STOP: Height sensor failure detected! "
@@ -3497,7 +3499,7 @@ class DeadReckoningGUI:
 
                     # After 2 seconds of stabilization, check if height is reasonably close to target
                     if (
-                        stabilization_elapsed > stabilization_height_timeout
+                        ENABLE_HEIGHT_SENSOR_SAFETY and stabilization_elapsed > stabilization_height_timeout
                         and abs(current_height - TARGET_HEIGHT)
                         > 0.3  # Allow 30cm tolerance
                         and not DEBUG_MODE
@@ -4089,7 +4091,7 @@ class DeadReckoningGUI:
 
                     # After 2 seconds of stabilization, check if height is reasonably close to target
                     if (
-                        stabilization_elapsed > stabilization_height_timeout
+                        ENABLE_HEIGHT_SENSOR_SAFETY and stabilization_elapsed > stabilization_height_timeout
                         and abs(current_height - TARGET_HEIGHT)
                         > 0.3  # Allow 30cm tolerance
                         and not DEBUG_MODE
