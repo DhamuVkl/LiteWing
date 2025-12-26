@@ -73,7 +73,7 @@ NP_LINK_SETUP_DELAY = 0.12
 DRONE_URI = "udp://192.168.43.42"
 TARGET_HEIGHT = 0.3  # Target hover height in meters
 TAKEOFF_TIME = 1.0  # Time to takeoff and stabilize (reduced for steeper ramp)
-HOVER_DURATION = 10.0  # How long to hover with position hold
+HOVER_DURATION = 0.0  # How long to hover with position hold
 LANDING_TIME = 0.5  # Time to land
 # Debug mode - set to True to disable motors (sensors and logging still work)
 DEBUG_MODE = False
@@ -3517,22 +3517,33 @@ class DeadReckoningGUI:
                             cf.commander.send_hover_setpoint(total_vx, total_vy, 0, TARGET_HEIGHT)
                         time.sleep(CONTROL_UPDATE_RATE)
 
-                # Landing
+                # Landing with stabilization
                 flight_phase = "LANDING"
                 if DEBUG_MODE:
                     self.log_to_output("DEBUG MODE: Simulating landing phase")
                 start_time = time.time()
                 while (
                     time.time() - start_time < LANDING_TIME and flight_active
-                ):  # Use global LANDING_TIME
+                ):
+                    if use_position_hold and sensor_data_ready:
+                        motion_vx, motion_vy = calculate_position_hold_corrections()
+                    else:
+                        motion_vx, motion_vy = 0.0, 0.0
+                    
+                    # Apply corrections even during landing to prevent drift
+                    total_vx = TRIM_VX + motion_vy
+                    total_vy = TRIM_VY + motion_vx
+                    
                     if not DEBUG_MODE:
-                        cf.commander.send_hover_setpoint(TRIM_VX, TRIM_VY, 0, 0)
+                        # Command height 0.0 to descend while maintaining horizontal position
+                        cf.commander.send_hover_setpoint(total_vx, total_vy, 0, 0.0)
                     log_to_csv()
-                    time.sleep(0.01)
+                    time.sleep(CONTROL_UPDATE_RATE)
 
                 # Stop motors
                 if not DEBUG_MODE:
                     cf.commander.send_setpoint(0, 0, 0, 0)
+                    time.sleep(0.1)  # Brief wait to ensure stop command is processed
                 flight_phase = "COMPLETE"
 
         except Exception as e:
