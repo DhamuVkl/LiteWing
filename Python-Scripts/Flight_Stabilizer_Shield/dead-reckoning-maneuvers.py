@@ -73,7 +73,7 @@ NP_LINK_SETUP_DELAY = 0.12
 DRONE_URI = "udp://192.168.43.42"
 TARGET_HEIGHT = 0.3  # Target hover height in meters
 TAKEOFF_TIME = 1.0  # Time to takeoff and stabilize (reduced for steeper ramp)
-HOVER_DURATION = 0.0  # How long to hover with position hold
+HOVER_DURATION = 20.0  # How long to hover with position hold
 LANDING_TIME = 0.5  # Time to land
 # Debug mode - set to True to disable motors (sensors and logging still work)
 DEBUG_MODE = False
@@ -139,6 +139,13 @@ SETTLING_DURATION = (
 SETTLING_CORRECTION_FACTOR = (
     0.5  # Correction strength during settling period (0.3-0.7, lower = gentler)
 )
+
+# === FIRMWARE PARAMETERS (Z-AXIS) ===
+# Set to True to send these values to the drone on connection
+ENABLE_FIRMWARE_PARAMS = True
+FW_THRUST_BASE = 24000  # Default: 24000. Increase if drone feels heavy (e.g., 26000)
+FW_Z_POS_KP = 2.6        # Default: 1.6. Height position gain
+FW_Z_VEL_KP = 15.0       # Default: 22.0. Vertical velocity damping (stop bouncing)
 
 # === OUTPUT WINDOW LOG ===
 Output_Window = True  # Set to True to enable output log window, False to disable
@@ -467,6 +474,33 @@ def periodic_position_reset():
         last_reset_time = current_time
         return True
     return False
+
+
+
+def apply_firmware_parameters(cf, logger=None):
+    """
+    Apply custom vertical PID and thrust parameters to the drone's brain.
+    Only takes effect if ENABLE_FIRMWARE_PARAMS is True.
+    """
+    if not ENABLE_FIRMWARE_PARAMS:
+        return
+        
+    try:
+        if logger: logger("Applying custom firmware parameters (Z-Axis/Thrust)...")
+        # Set parameters as strings since cflib expects that/it's safer for radio transport
+        cf.param.set_value('posCtlPid.thrustBase', str(FW_THRUST_BASE))
+        cf.param.set_value('posCtlPid.zKp', str(FW_Z_POS_KP))
+        cf.param.set_value('velCtlPid.vzKp', str(FW_Z_VEL_KP))
+        
+        # Brief wait to ensure the drone processed the parameters
+        time.sleep(0.2)
+        
+        # Verify the most important one
+        actual_thrust = cf.param.get_value('posCtlPid.thrustBase')
+        if logger: logger(f"Firmware configured: thrustBase={actual_thrust}, zKp={FW_Z_POS_KP}, vzKp={FW_Z_VEL_KP}")
+        
+    except Exception as e:
+        if logger: logger(f"WARNING: Failed to set firmware parameters: {str(e)}")
 
 
 def reset_position_tracking(reset_integrals=True):
@@ -3313,6 +3347,9 @@ class DeadReckoningGUI:
             with SyncCrazyflie(DRONE_URI, cf=cf) as scf:
                 scf_instance = scf
                 flight_active = True
+                
+                # Apply firmware parameters right after connection
+                apply_firmware_parameters(cf, logger=self.log_to_output)
 
                 # Setup logging
                 flight_phase = "SETUP"
@@ -3367,7 +3404,7 @@ class DeadReckoningGUI:
                     if not DEBUG_MODE:
                         # Enable control corrections during takeoff if height is sufficient (> 5cm)
                         # This prevents drift during the 1.5s takeoff phase
-                        if use_position_hold and sensor_data_ready and current_height > 0.02:
+                        if use_position_hold and sensor_data_ready and current_height > 0.04:
                             # Hold at origin (0,0) during takeoff regardless of maneuver target
                             motion_vx, motion_vy = calculate_position_hold_corrections(0.0, 0.0)
                         else:
@@ -3753,6 +3790,9 @@ class DeadReckoningGUI:
             with SyncCrazyflie(DRONE_URI, cf=cf) as scf:
                 scf_instance = scf
                 flight_active = True
+                
+                # Apply firmware parameters right after connection
+                apply_firmware_parameters(cf, logger=self.log_to_output)
 
                 # Setup logging
                 log_motion, log_battery = setup_logging(cf, logger=self.log_to_output)
