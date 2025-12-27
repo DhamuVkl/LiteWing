@@ -99,8 +99,8 @@ HEIGHT_SENSOR_MIN_CHANGE = (
 POSITION_KP = 1.2
 POSITION_KI = 0.05  # Increased from 0.01 for better drift correction
 POSITION_KD = 0.0
-VELOCITY_KP = 0.6   # Increased from 0.5 for better damping
-VELOCITY_KI = 0.0
+VELOCITY_KP = 0.7   # Increased from 0.5 for better damping
+VELOCITY_KI = 0.01
 VELOCITY_KD = 0.0
 # Control limits
 MAX_CORRECTION = 0.7  # Maximum control correction allowed
@@ -3365,9 +3365,9 @@ class DeadReckoningGUI:
                     elapsed_takeoff_time = time.time() - start_time
 
                     if not DEBUG_MODE:
-                        # Enable control corrections during takeoff if height is sufficient (> 5cm)
+                        # Enable control corrections during takeoff if height is sufficient (> 2cm)
                         # This prevents drift during the 1.5s takeoff phase
-                        if use_position_hold and sensor_data_ready and current_height > 0.05:
+                        if use_position_hold and sensor_data_ready and current_height > 0.02:
                             # Hold at origin (0,0) during takeoff regardless of maneuver target
                             motion_vx, motion_vy = calculate_position_hold_corrections(0.0, 0.0)
                         else:
