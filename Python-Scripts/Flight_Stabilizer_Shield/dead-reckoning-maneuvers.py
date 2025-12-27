@@ -96,8 +96,8 @@ HEIGHT_SENSOR_MIN_CHANGE = (
 # === DEAD RECKONING POSITION CONTROL PARAMETERS ===
 # PID Controller Parameters
 # Start here, then increase gradually
-POSITION_KP = 1.2
-POSITION_KI = 0.05  # Increased from 0.01 for better drift correction
+POSITION_KP = 1.0
+POSITION_KI = 0.03  # Increased from 0.01 for better drift correction
 POSITION_KD = 0.0
 VELOCITY_KP = 0.7   # Increased from 0.5 for better damping
 VELOCITY_KI = 0.01
@@ -126,7 +126,7 @@ MANEUVER_DISTANCE = 0.5  # Default distance
 MANEUVER_THRESHOLD = 0.05  # Within 5cm is close enough
 WAYPOINT_TIMEOUT = 30.0  # Seconds
 WAYPOINT_STABILIZATION_TIME = 0.5  # Seconds to hover at each corner
-JOYSTICK_SENSITIVITY = 0.5
+JOYSTICK_SENSITIVITY = 0.2
 
 # === JOYSTICK MOMENTUM COMPENSATION ===
 # When keys are released in "Hold at Current Position" mode, these parameters help prevent counter-movement
@@ -150,7 +150,7 @@ motion_delta_x = 0
 motion_delta_y = 0
 sensor_data_ready = False
 last_sensor_heartbeat = time.time()  # Track last received packet
-DATA_TIMEOUT_THRESHOLD = 0.5        # Max allowed time between sensor packets (seconds)
+DATA_TIMEOUT_THRESHOLD = 0.2        # Max allowed time between sensor packets (seconds)
 # Log file
 log_file = None
 log_writer = None
@@ -3365,7 +3365,7 @@ class DeadReckoningGUI:
                     elapsed_takeoff_time = time.time() - start_time
 
                     if not DEBUG_MODE:
-                        # Enable control corrections during takeoff if height is sufficient (> 2cm)
+                        # Enable control corrections during takeoff if height is sufficient (> 5cm)
                         # This prevents drift during the 1.5s takeoff phase
                         if use_position_hold and sensor_data_ready and current_height > 0.02:
                             # Hold at origin (0,0) during takeoff regardless of maneuver target
