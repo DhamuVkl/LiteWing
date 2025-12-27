@@ -83,6 +83,9 @@ ENABLE_HEIGHT_SENSOR_SAFETY = False
 VELOCITY_SMOOTHING_ALPHA = 0.85  # Default: 0.7 (previously hardcoded)
 # CSV Logging - set to False to disable CSV file generation
 DRONE_CSV_LOGGING = False
+# Takeoff Ramp - set to False to disable smooth altitude climb (direct target height)
+ENABLE_TAKEOFF_RAMP = False
+
 # Basic trim corrections
 TRIM_VX = 0.0  # Forward/backward trim correction
 TRIM_VY = 0.0  # Left/right trim correction
@@ -142,9 +145,9 @@ SETTLING_CORRECTION_FACTOR = (
 
 # === FIRMWARE PARAMETERS (Z-AXIS) ===
 # Set to True to send these values to the drone on connection
-ENABLE_FIRMWARE_PARAMS = True
+ENABLE_FIRMWARE_PARAMS = False
 FW_THRUST_BASE = 24000  # Default: 24000. Increase if drone feels heavy (e.g., 26000)
-FW_Z_POS_KP = 2.6        # Default: 1.6. Height position gain
+FW_Z_POS_KP = 1.6        # Default: 1.6. Height position gain
 FW_Z_VEL_KP = 15.0       # Default: 22.0. Vertical velocity damping (stop bouncing)
 
 # === OUTPUT WINDOW LOG ===
@@ -2659,6 +2662,7 @@ class DeadReckoningGUI:
         """Apply runtime adjustable values from GUI inputs"""
         global TARGET_HEIGHT, TAKEOFF_TIME, HOVER_DURATION, LANDING_TIME, VELOCITY_SMOOTHING_ALPHA, MAX_CORRECTION
         global VELOCITY_THRESHOLD, DRIFT_COMPENSATION_RATE, PERIODIC_RESET_INTERVAL, MAX_POSITION_ERROR
+
         try:
             # Get values from GUI
             new_target_height = float(self.target_height_var.get())
@@ -2713,6 +2717,7 @@ class DeadReckoningGUI:
             self.log_to_output(f"  Drift Compensation Rate: {DRIFT_COMPENSATION_RATE}")
             self.log_to_output(f"  Reset Interval: {PERIODIC_RESET_INTERVAL}")
             self.log_to_output(f"  Max Position Error: {MAX_POSITION_ERROR}")
+
 
             # Log to output window
             self.log_to_output("Runtime values applied successfully")
@@ -2839,7 +2844,9 @@ class DeadReckoningGUI:
         global TRIM_VX, TRIM_VY, OPTICAL_FLOW_SCALE, USE_HEIGHT_SCALING
         global TARGET_HEIGHT, TAKEOFF_TIME, HOVER_DURATION, LANDING_TIME, VELOCITY_SMOOTHING_ALPHA, MAX_CORRECTION
         global VELOCITY_THRESHOLD, DRIFT_COMPENSATION_RATE, PERIODIC_RESET_INTERVAL, MAX_POSITION_ERROR
+
         global JOYSTICK_SENSITIVITY
+
         TRIM_VX = 0.1
         TRIM_VY = -0.02
         OPTICAL_FLOW_SCALE = 3.7
@@ -3415,14 +3422,19 @@ class DeadReckoningGUI:
                         total_vy = TRIM_VY + motion_vx
                         
                         # SMOOTH TAKEOFF RAMP: Gradually increase height target to minimize bouncing
-                        # Calculate progress (0.0 to 1.0)
-                        takeoff_progress = min(1.0, elapsed_takeoff_time / TAKEOFF_TIME)
-                        # Ramp from current ground height to target height
-                        command_height = takeoff_height_start + (TARGET_HEIGHT - takeoff_height_start) * takeoff_progress
+                        if ENABLE_TAKEOFF_RAMP:
+                            # Calculate progress (0.0 to 1.0)
+                            takeoff_progress = min(1.0, elapsed_takeoff_time / TAKEOFF_TIME)
+                            # Ramp from current ground height to target height
+                            command_height = takeoff_height_start + (TARGET_HEIGHT - takeoff_height_start) * takeoff_progress
+                        else:
+                            # Direct target height (leveraging firmware's internal ramp or jumping to height)
+                            command_height = TARGET_HEIGHT
                         
                         cf.commander.send_hover_setpoint(
                             total_vx, total_vy, 0, command_height
                         )
+
                     log_to_csv()
                     time.sleep(CONTROL_UPDATE_RATE)
 
