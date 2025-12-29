@@ -126,8 +126,8 @@ USE_HEIGHT_SCALING = True  # Set to False to disable height dependency
 
 # === MANEUVER PARAMETERS ===
 MANEUVER_DISTANCE = 0.5  # Default distance
-MANEUVER_THRESHOLD = 0.05  # Within 5cm is close enough
-WAYPOINT_TIMEOUT = 30.0  # Seconds
+MANEUVER_THRESHOLD = 0.10  # Within 5cm is close enough
+WAYPOINT_TIMEOUT = 60.0  # Seconds before aborting mission
 WAYPOINT_STABILIZATION_TIME = 0.5  # Seconds to hover at each corner
 JOYSTICK_SENSITIVITY = 0.2
 
@@ -3555,7 +3555,7 @@ class DeadReckoningGUI:
                                         target_position_x, target_position_y = shape_waypoints[shape_index]
                                         self.log_to_output(f"Moving to next waypoint: ({target_position_x:.2f}, {target_position_y:.2f})")
                                         # Do NOT reset integrals for next leg to preserve auto-trim balance
-                                        reset_position_tracking(reset_integrals=False)
+                                        # reset_position_tracking(reset_integrals=False)
                                     else:
                                         self.log_to_output(f"Mission target reached at ({integrated_position_x:.2f}, {integrated_position_y:.2f})!")
                                         maneuver_active = False
