@@ -2446,7 +2446,7 @@ class DeadReckoningGUI:
         self.ax1.grid(True, alpha=0.3)
         (self.line_vx,) = self.ax1.plot([], [], "b-", linewidth=2, label="VX")
         (self.line_vy,) = self.ax1.plot([], [], "r-", linewidth=2, label="VY")
-        self.ax1.legend()
+        self.ax1.legend(loc='upper left', bbox_to_anchor=(1.0, 1.0), fontsize=8)
 
         # 2D Position plot
         self.ax2.set_title("Integrated Position", fontsize=12)
@@ -2476,7 +2476,8 @@ class DeadReckoningGUI:
             color="orange",
             label="Release Pts",
         )
-        self.ax2.legend()
+        # Move legend outside to the right to prevent shadowing the trajectory
+        self.ax2.legend(loc='upper left', bbox_to_anchor=(1.0, 1.0), fontsize=9)
 
         # Control corrections plot
         # self.ax3.set_title("Control Corrections", fontsize=12)
@@ -2493,7 +2494,7 @@ class DeadReckoningGUI:
         self.ax3.grid(True, alpha=0.3)
         (self.line_corr_vx,) = self.ax3.plot([], [], "g-", linewidth=2, label="Corr VX")
         (self.line_corr_vy,) = self.ax3.plot([], [], "m-", linewidth=2, label="Corr VY")
-        self.ax3.legend()
+        self.ax3.legend(loc='upper left', bbox_to_anchor=(1.0, 1.0), fontsize=8)
 
         # Height plot
         # self.ax4.set_title("Height", fontsize=12)
@@ -2515,10 +2516,12 @@ class DeadReckoningGUI:
         self.ax4.axhline(
             y=TARGET_HEIGHT, color="red", linestyle="--", alpha=0.7, label="Target"
         )
-        self.ax4.legend()
+        self.ax4.legend(loc='upper left', bbox_to_anchor=(1.0, 1.0), fontsize=8)
 
         self.fig.tight_layout()
-        self.fig.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.05)
+        # Increased right margin and horizontal spacing for legends
+        self.fig.subplots_adjust(left=0.07, right=0.88, top=0.94, bottom=0.06, wspace=0.45, hspace=0.3)
+
 
     def update_plots(self, frame):
         """Update all plots with new data (highly optimized and thread-safe)"""

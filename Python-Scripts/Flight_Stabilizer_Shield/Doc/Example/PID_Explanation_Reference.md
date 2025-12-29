@@ -22,6 +22,16 @@ The script uses a **Cascaded (Dual-Layer) PID** loop to control horizontal movem
 *   **Purpose:** Acts as a shock absorber. It looks at the speed of approach and applies a counter-force to prevent the drone from flying past the target (Overshooting).
 *   **In Flight:** Not used much in optical flow scripts because sensor noise can make Kd "chatter" (high frequency motor buzzing). We usually use internal smoothing instead.
 
+## Firmware (Height) PID Parameters
+
+These parameters live inside the drone's brain and control vertical stability.
+
+| Parameter | Purpose | Tuning Effect |
+| :--- | :--- | :--- |
+| **FW_THRUST_BASE** | The "Static Lift." | Increase if the drone feels heavy or "sags" toward the floor. |
+| **FW_Z_POS_KP** | Height Snappiness. | Controls how fast the drone reaches the target height. If too high, it will overshoot. |
+| **FW_Z_VEL_KP** | Height Damping. | **The most important for bouncing.** Increase this to stop the "pogo-stick" oscillation. |
+
 ---
 
 ## Safety and Integration Parameters
