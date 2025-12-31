@@ -56,32 +56,30 @@ static bool isInit;
 
 static VL53L1_Dev_t dev;
 
-static uint16_t zRanger2GetMeasurementAndRestart(VL53L1_Dev_t *dev)
+static uint16_t zRanger2GetMeasurement(VL53L1_Dev_t *dev)
 {
     VL53L1_Error status = VL53L1_ERROR_NONE;
     VL53L1_RangingMeasurementData_t rangingData;
     uint8_t dataReady = 0;
     uint16_t range;
 
-    while (dataReady == 0)
+    status = VL53L1_GetMeasurementDataReady(dev, &dataReady);
+    if (status != VL53L1_ERROR_NONE || dataReady == 0)
     {
-        status = VL53L1_GetMeasurementDataReady(dev, &dataReady);
-        vTaskDelay(M2T(1));
+        return RANGE_OUTLIER_LIMIT + 1; // Not ready or error
     }
 
     status = VL53L1_GetRangingMeasurementData(dev, &rangingData);
     
     // Fix: Only use the measurement if the RangeStatus is VL53L1_RANGESTATUS_RANGE_VALID (0)
-    if (rangingData.RangeStatus == 0) {
+    if (status == VL53L1_ERROR_NONE && rangingData.RangeStatus == 0) {
         range = rangingData.RangeMilliMeter;
     } else {
-        // Return a value exceeding the outlier limit to trigger filtering
         range = RANGE_OUTLIER_LIMIT + 1;
     }
 
-    VL53L1_StopMeasurement(dev);
-    status = VL53L1_StartMeasurement(dev);
-    status = status;
+    // Handshake: Clear interrupt to allow the sensor to start the next internal measurement immediately
+    VL53L1_clear_interrupt_and_enable_next_range(dev, VL53L1_DEVICEMEASUREMENTMODE_BACKTOBACK);
 
     return range;
 }
@@ -123,31 +121,44 @@ void zRanger2Task(void* arg)
 
   systemWaitStart();
 
-  // Restart sensor
+  // Configure sensor for continuous (back-to-back) mode
   VL53L1_StopMeasurement(&dev);
-  VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_MEDIUM);
+  VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_SHORT);
   VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, 25000);
+  VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, 25); // Match the task rate
 
+  // Start continuous ranging
   VL53L1_StartMeasurement(&dev);
 
-  lastWakeTime = xTaskGetTickCount();
+  static int consecutive_errors = 0;
 
   while (1) {
     vTaskDelayUntil(&lastWakeTime, M2T(25));
 
-    uint16_t range_new = zRanger2GetMeasurementAndRestart(&dev);
+    uint16_t range_new = zRanger2GetMeasurement(&dev);
 
     // Only update and push to estimator if range is valid and within limits
-    // Invalid measurements (RangeStatus != 0) return RANGE_OUTLIER_LIMIT + 1
     if (range_new < RANGE_OUTLIER_LIMIT) {
+      consecutive_errors = 0;
       range_last = range_new;
       rangeSet(rangeDown, range_last / 1000.0f);
       
       float distance = (float)range_last * 0.001f; // Scale from [mm] to [m]
       float stdDev = expStdA * (1.0f  + expf( expCoeff * (distance - expPointA)));
       rangeEnqueueDownRangeInEstimator(distance, stdDev, xTaskGetTickCount());
+    } else {
+      consecutive_errors++;
+      // If sensor is stuck for > 1 second (40 * 25ms), force a restart
+      if (consecutive_errors > 40) {
+        DEBUG_PRINTW("ZR2: Sensor stuck, restarting acquisition...\n");
+        VL53L1_StopMeasurement(&dev);
+        vTaskDelay(M2T(10));
+        VL53L1_StartMeasurement(&dev);
+        consecutive_errors = 0;
+      }
     }
   }
+
 }
 
 static uint8_t disable = 0;

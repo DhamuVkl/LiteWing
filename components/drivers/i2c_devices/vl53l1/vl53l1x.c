@@ -70,6 +70,12 @@ bool vl53l1xInit(VL53L1_Dev_t *pdev, I2C_Dev *I2cHandle)
 
   //vl53l1xSetI2CAddress(pdev, newAddress);
 
+  status = VL53L1_WaitDeviceBooted(pdev);
+  if (status != VL53L1_ERROR_NONE) {
+    DEBUG_PRINTW("VL53L1X: WaitDeviceBooted failed [FAIL]\n");
+    return false;
+  }
+
   uint8_t byteData;
   uint16_t wordData;
   VL53L1_RdByte(pdev, 0x010F, &byteData);
@@ -79,16 +85,17 @@ bool vl53l1xInit(VL53L1_Dev_t *pdev, I2C_Dev *I2cHandle)
   VL53L1_RdWord(pdev, 0x010F, &wordData);
   DEBUG_PRINT( "VL53L1X: %02X\n\r", wordData);
 
-  status = VL53L1_WaitDeviceBooted(pdev);
+  status = VL53L1_DataInit(pdev);
   if (status == VL53L1_ERROR_NONE)
   {
-	status = VL53L1_DataInit(pdev);
-
-	if (status == VL53L1_ERROR_NONE)
-	{
-		status = VL53L1_StaticInit(pdev);
-	}
+    status = VL53L1_StaticInit(pdev);
+    if (status == VL53L1_ERROR_NONE)
+    {
+        // Set Preset Mode - Essential for internal filtering
+        status = VL53L1_SetPresetMode(pdev, VL53L1_PRESETMODE_LITE_RANGING);
+    }
   }
+
 
 #ifdef SET_VL53LX_ROI
   VL53L1_UserRoi_t Roi0;
