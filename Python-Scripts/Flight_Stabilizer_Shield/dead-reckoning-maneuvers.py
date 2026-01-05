@@ -156,6 +156,7 @@ Output_Window = True  # Set to True to enable output log window, False to disabl
 # === GLOBAL VARIABLES ===
 # Sensor data
 current_height = 0.0
+current_range_height = 0.0
 motion_delta_x = 0
 motion_delta_y = 0
 sensor_data_ready = False
@@ -218,6 +219,7 @@ position_y_history = deque(maxlen=max_history_points)
 correction_vx_history = deque(maxlen=max_history_points)
 correction_vy_history = deque(maxlen=max_history_points)
 height_history = deque(maxlen=max_history_points)
+range_height_history = deque(maxlen=max_history_points)
 
 # Complete trajectory history (never trimmed for data, but downsampled for UI)
 MAX_PLOT_TRAJECTORY_POINTS = 5000  # Limit points drawn on 2D plot to prevent lag
@@ -656,6 +658,7 @@ def update_history():
         correction_vx_history.append(current_correction_vx)
         correction_vy_history.append(current_correction_vy)
         height_history.append(current_height)
+        range_height_history.append(current_range_height)
         
         # Add to complete trajectory
         complete_trajectory_x.append(integrated_position_x)
@@ -664,7 +667,7 @@ def update_history():
 
 def motion_callback(timestamp, data, logconf):
     """Motion sensor data callback"""
-    global current_height, motion_delta_x, motion_delta_y, sensor_data_ready
+    global current_height, current_range_height, motion_delta_x, motion_delta_y, sensor_data_ready
     global current_vx, current_vy, last_integration_time, last_sensor_heartbeat
     global debug_counter
 
@@ -673,6 +676,9 @@ def motion_callback(timestamp, data, logconf):
 
     # Get sensor data
     current_height = data.get("stateEstimate.z", 0)
+    # Get raw range and convert to meters (mm -> m)
+    raw_range_mm = data.get("range.zrange", 0)
+    current_range_height = raw_range_mm / 1000.0 if raw_range_mm else 0.0
     motion_delta_x = data.get("motion.deltaX", 0)
     motion_delta_y = data.get("motion.deltaY", 0)
     sensor_data_ready = True
@@ -729,6 +735,7 @@ def setup_logging(cf, logger=None):
             ("motion.deltaX", "int16_t"),
             ("motion.deltaY", "int16_t"),
             ("stateEstimate.z", "float"),
+            ("range.zrange", "uint16_t"),
         ]
         added_motion_vars = []
         for var_name, var_type in motion_variables:
@@ -857,6 +864,7 @@ def init_csv_logging(logger=None):
             "Integrated Position X (m)",
             "Integrated Position Y (m)",
             "Height (m)",
+            "Range (m)",
             "Velocity X (m/s)",
             "Velocity Y (m/s)",
             "Correction VX",
@@ -882,6 +890,7 @@ def log_to_csv():
             f"{integrated_position_x:.6f}",
             f"{integrated_position_y:.6f}",
             f"{current_height:.6f}",
+            f"{current_range_height:.6f}",
             f"{current_vx:.6f}",
             f"{current_vy:.6f}",
             f"{current_correction_vx:.6f}",
@@ -1692,10 +1701,14 @@ class DeadReckoningGUI:
         self.battery_var = tk.StringVar(value="Battery: 0.00V")
         tk.Label(
             row1, textvariable=self.height_var, font=("Arial", 11, "bold"), fg="blue"
-        ).pack(side=tk.LEFT, padx=20)
+        ).pack(side=tk.LEFT, padx=10)
+        self.range_var = tk.StringVar(value="Range: 0.000m")
+        tk.Label(
+            row1, textvariable=self.range_var, font=("Arial", 11, "bold"), fg="cyan4"
+        ).pack(side=tk.LEFT, padx=10)
         tk.Label(
             row1, textvariable=self.phase_var, font=("Arial", 11, "bold"), fg="red"
-        ).pack(side=tk.LEFT, padx=20)
+        ).pack(side=tk.LEFT, padx=10)
         tk.Label(
             row1, textvariable=self.battery_var, font=("Arial", 11, "bold"), fg="orange"
         ).pack(side=tk.LEFT, padx=20)
@@ -2513,6 +2526,9 @@ class DeadReckoningGUI:
         (self.line_height,) = self.ax4.plot(
             [], [], "orange", linewidth=2, label="Height"
         )
+        (self.line_range,) = self.ax4.plot(
+            [], [], "c--", linewidth=1, alpha=0.8, label="Range (ToF)"
+        )
         self.ax4.axhline(
             y=TARGET_HEIGHT, color="red", linestyle="--", alpha=0.7, label="Target"
         )
@@ -2535,6 +2551,7 @@ class DeadReckoningGUI:
             vx_hist = np.array(velocity_x_history_plot)
             vy_hist = np.array(velocity_y_history_plot)
             h_hist = np.array(height_history)
+            r_hist = np.array(range_height_history)
             corr_vx_hist = np.array(correction_vx_history)
             corr_vy_hist = np.array(correction_vy_history)
             
@@ -2550,6 +2567,7 @@ class DeadReckoningGUI:
             
             # Current values for UI
             cur_h = current_height
+            cur_range = current_range_height
             cur_vx = current_vx
             cur_vy = current_vy
             cur_pos_x = integrated_position_x
@@ -2569,6 +2587,7 @@ class DeadReckoningGUI:
         # Update real-time value displays
         stale_msg = " (STALE!)" if is_stale else ""
         self.height_var.set(f"Height: {cur_h:.3f}m{stale_msg}")
+        self.range_var.set(f"Range: {cur_range:.3f}m{stale_msg}")
         self.phase_var.set(f"Phase: {flight_phase}")
         
         if current_battery_voltage > 0:
@@ -2615,6 +2634,7 @@ class DeadReckoningGUI:
 
             # 4. Height
             self.line_height.set_data(t_hist, h_hist)
+            self.line_range.set_data(t_hist, r_hist)
 
             # --- Smart Axis Scaling ---
             if len(t_hist) > 1:
@@ -2651,7 +2671,8 @@ class DeadReckoningGUI:
                 self.ax3.set_ylim(c_min - c_margin, c_max + c_margin)
 
                 # Height Y-axis
-                h_min, h_max = h_hist.min(), h_hist.max()
+                h_all = np.concatenate([h_hist, r_hist])
+                h_min, h_max = h_all.min(), h_all.max()
                 h_margin = max((h_max - h_min) * 0.1, 0.05)
                 self.ax4.set_ylim(h_min - h_margin, h_max + h_margin)
 
@@ -2957,6 +2978,7 @@ class DeadReckoningGUI:
         correction_vx_history.clear()
         correction_vy_history.clear()
         height_history.clear()
+        range_height_history.clear()
         complete_trajectory_x.clear()
         complete_trajectory_x.clear()
         complete_trajectory_y.clear()
@@ -2980,6 +3002,8 @@ class DeadReckoningGUI:
             self.line_corr_vy.set_data([], [])
         if hasattr(self, "line_height"):
             self.line_height.set_data([], [])
+        if hasattr(self, "line_range"):
+            self.line_range.set_data([], [])
 
         # Redraw the plots
         if hasattr(self, "canvas"):
