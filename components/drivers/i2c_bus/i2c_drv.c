@@ -94,6 +94,11 @@ static void i2cdrvInitBus(I2cDrv *i2c)
 
     if (!err) {
         err = i2c_driver_install(i2c->def->i2cPort, conf.mode, 0, 0, 0);
+        if (!err) {
+            // Enable hardware glitch filter. 
+            // The value 7 means the filter will ignore pulses shorter than 7 APB clock cycles.
+            i2c_filter_enable(i2c->def->i2cPort, 7);
+        }
     }
 
     DEBUG_PRINTI(" i2c %d driver install return = %d", i2c->def->i2cPort, err);
