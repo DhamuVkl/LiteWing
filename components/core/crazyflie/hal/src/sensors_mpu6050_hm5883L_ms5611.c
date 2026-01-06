@@ -264,29 +264,31 @@ static void sensorsTask(void *param)
             uint8_t dataLen = (uint8_t)(SENSORS_MPU6050_BUFF_LEN +
                                         (isMagnetometerPresent ? SENSORS_MAG_BUFF_LEN : 0) +
                                         (isBarometerPresent ? SENSORS_BARO_BUFF_LEN : 0));
-            i2cdevReadReg8(I2C0_DEV, MPU6050_ADDRESS_AD0_LOW, MPU6050_RA_ACCEL_XOUT_H, dataLen, buffer);
+            if (i2cdevReadReg8(I2C0_DEV, MPU6050_ADDRESS_AD0_LOW, MPU6050_RA_ACCEL_XOUT_H, dataLen, buffer)) {
+                /* sensors step 2-process the respective data */
+                processAccGyroMeasurements(&(buffer[0]));
 
-            /* sensors step 2-process the respective data */
-            processAccGyroMeasurements(&(buffer[0]));
+                if (isMagnetometerPresent) {
+                    processMagnetometerMeasurements(&(buffer[SENSORS_MPU6050_BUFF_LEN]));
+                }
 
-            if (isMagnetometerPresent) {
-                processMagnetometerMeasurements(&(buffer[SENSORS_MPU6050_BUFF_LEN]));
-            }
+                if (isBarometerPresent) {
+                    processBarometerMeasurements(&(buffer[isMagnetometerPresent ? SENSORS_MPU6050_BUFF_LEN + SENSORS_MAG_BUFF_LEN : SENSORS_MPU6050_BUFF_LEN]));
+                }
 
-            if (isBarometerPresent) {
-                processBarometerMeasurements(&(buffer[isMagnetometerPresent ? SENSORS_MPU6050_BUFF_LEN + SENSORS_MAG_BUFF_LEN : SENSORS_MPU6050_BUFF_LEN]));
-            }
+                /* sensors step 3- queue sensors data  on the output queues */
+                xQueueOverwrite(accelerometerDataQueue, &sensorData.acc);
+                xQueueOverwrite(gyroDataQueue, &sensorData.gyro);
 
-            /* sensors step 3- queue sensors data  on the output queues */
-            xQueueOverwrite(accelerometerDataQueue, &sensorData.acc);
-            xQueueOverwrite(gyroDataQueue, &sensorData.gyro);
+                if (isMagnetometerPresent) {
+                    xQueueOverwrite(magnetometerDataQueue, &sensorData.mag);
+                }
 
-            if (isMagnetometerPresent) {
-                xQueueOverwrite(magnetometerDataQueue, &sensorData.mag);
-            }
-
-            if (isBarometerPresent) {
-                xQueueOverwrite(barometerDataQueue, &sensorData.baro);
+                if (isBarometerPresent) {
+                    xQueueOverwrite(barometerDataQueue, &sensorData.baro);
+                }
+            } else {
+                DEBUG_PRINTW("I2C Read Failed\n");
             }
 
             /* sensors step 4- Unlock stabilizer task */
