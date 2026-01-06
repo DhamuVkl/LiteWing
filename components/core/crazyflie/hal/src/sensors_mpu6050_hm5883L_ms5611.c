@@ -80,7 +80,7 @@
  * Enable sensors on board 
  */
 // #define SENSORS_ENABLE_MAG_HM5883L
-// #define SENSORS_ENABLE_PRESSURE_MS5611
+#define SENSORS_ENABLE_PRESSURE_MS5611
 //#define SENSORS_ENABLE_RANGE_VL53L0X
 #define SENSORS_ENABLE_RANGE_VL53L1X
 #define SENSORS_ENABLE_FLOW_PMW3901
@@ -262,8 +262,7 @@ static void sensorsTask(void *param)
 
             /* sensors step 1-read data from I2C */
             uint8_t dataLen = (uint8_t)(SENSORS_MPU6050_BUFF_LEN +
-                                        (isMagnetometerPresent ? SENSORS_MAG_BUFF_LEN : 0) +
-                                        (isBarometerPresent ? SENSORS_BARO_BUFF_LEN : 0));
+                                        (isMagnetometerPresent ? SENSORS_MAG_BUFF_LEN : 0));
             if (i2cdevReadReg8(I2C0_DEV, MPU6050_ADDRESS_AD0_LOW, MPU6050_RA_ACCEL_XOUT_H, dataLen, buffer)) {
                 /* sensors step 2-process the respective data */
                 processAccGyroMeasurements(&(buffer[0]));
@@ -273,7 +272,7 @@ static void sensorsTask(void *param)
                 }
 
                 if (isBarometerPresent) {
-                    processBarometerMeasurements(&(buffer[isMagnetometerPresent ? SENSORS_MPU6050_BUFF_LEN + SENSORS_MAG_BUFF_LEN : SENSORS_MPU6050_BUFF_LEN]));
+                    ms5611GetData(&sensorData.baro.pressure, &sensorData.baro.temperature, &sensorData.baro.asl);
                 }
 
                 /* sensors step 3- queue sensors data  on the output queues */
@@ -307,18 +306,27 @@ void sensorsMpu6050Hmc5883lMs5611WaitDataReady(void)
 
 void processBarometerMeasurements(const uint8_t *buffer)
 {
-    //TODO: replace it to MS5611
-    DEBUG_PRINTW("processBarometerMeasurements NEED TODO");
-//   static uint32_t rawPressure = 0;
-//   static int16_t rawTemp = 0;
+                        /* 
+                     NOTE: We use ms5611GetData() instead of simple linear scaling (like for LPS25H).
+                     
+                     Difference from LPS25H:
+                     - LPS25H: Uses simple linear scaling (raw_val / sensitivity).
+                     - MS5611: Requires complex polynomial compensation algorithms using 6 factory calibration coefficients.
+                       1. Calculates 'dT' (Delta Temp) = Difference between actual temp and reference.
+                       2. Calculates Temperature Compensated Pressure using 'dT' to adjust offsets dynamically.
+                     
+                     LPS25H implementation for reference:
+                     sensorData.baro.pressure = (float) rawPressure / LPS25H_LSB_PER_MBAR;
+                     sensorData.baro.temperature = LPS25H_TEMP_OFFSET + ((float) rawTemp / LPS25H_LSB_PER_CELSIUS);
+                     sensorData.baro.asl = lps25hPressureToAltitude(&sensorData.baro.pressure);
+                     */
+    int32_t rawPressure = ((int32_t)buffer[0] << 16) | ((int32_t)buffer[1] << 8) | buffer[2];
+    int32_t rawTemp = ((int32_t)buffer[3] << 16) | ((int32_t)buffer[4] << 8) | buffer[5];
 
-// Check if there is a new pressure update
-
-// Check if there is a new temp update
-
-//   sensorData.baro.pressure = (float) rawPressure / LPS25H_LSB_PER_MBAR;
-//   sensorData.baro.temperature = LPS25H_TEMP_OFFSET + ((float) rawTemp / LPS25H_LSB_PER_CELSIUS);
-//   sensorData.baro.asl = lps25hPressureToAltitude(&sensorData.baro.pressure);
+    int32_t dT = ms5611CalcDeltaTemp(rawTemp);
+    sensorData.baro.temperature = ms5611CalcTemp(dT);
+    sensorData.baro.pressure = ms5611CalcPressure(rawPressure, dT);
+    sensorData.baro.asl = ms5611PressureToAltitude(&sensorData.baro.pressure);
 }
 
 void processMagnetometerMeasurements(const uint8_t *buffer)
@@ -484,9 +492,7 @@ static void sensorsDeviceInit(void)
 
 #endif
 #ifdef SENSORS_ENABLE_PRESSURE_MS5611
-    ms5611Init(I2C0_DEV);
-
-    if (false) {
+    if (ms5611Init(I2C0_DEV)) {
         isBarometerPresent = true;
         DEBUG_PRINTI("MS5611 I2C connection [OK].\n");
     } else {
@@ -587,20 +593,21 @@ static void sensorsSetupSlaveRead(void)
 #ifdef SENSORS_ENABLE_PRESSURE_MS5611
 
     if (isBarometerPresent) {
+        // MS5611 is read directly matching its state machine, not via MPU6050 slave mode
         // Configure the LPS25H as a slave and enable read
         // Setting up two reads works for LPS25H fifo avg filter as well as the
         // auto inc wraps back to LPS25H_PRESS_OUT_L after LPS25H_PRESS_OUT_H is read.
-        mpu6050SetSlaveAddress(1, 0x80 | MS5611_ADDR_CSB_LOW);
-        mpu6050SetSlaveRegister(1, MS5611_D1);
-        mpu6050SetSlaveDataLength(1, MS5611_D1D2_SIZE);
-        mpu6050SetSlaveDelayEnabled(1, true);
-        mpu6050SetSlaveEnabled(1, true);
+        // mpu6050SetSlaveAddress(1, 0x80 | MS5611_ADDR_CSB_LOW);
+        // mpu6050SetSlaveRegister(1, MS5611_D1);
+        // mpu6050SetSlaveDataLength(1, MS5611_D1D2_SIZE);
+        // mpu6050SetSlaveDelayEnabled(1, true);
+        // mpu6050SetSlaveEnabled(1, true);
 
-        mpu6050SetSlaveAddress(2, 0x80 | MS5611_ADDR_CSB_LOW); //temperature
-        mpu6050SetSlaveRegister(2, MS5611_D2);
-        mpu6050SetSlaveDataLength(2, MS5611_D1D2_SIZE);
-        mpu6050SetSlaveDelayEnabled(2, true);
-        mpu6050SetSlaveEnabled(2, true);
+        // mpu6050SetSlaveAddress(2, 0x80 | MS5611_ADDR_CSB_LOW); //temperature
+        // mpu6050SetSlaveRegister(2, MS5611_D2);
+        // mpu6050SetSlaveDataLength(2, MS5611_D1D2_SIZE);
+        // mpu6050SetSlaveDelayEnabled(2, true);
+        // mpu6050SetSlaveEnabled(2, true);
         DEBUG_PRINTD("mpu6050SetSlaveAddress MS5611 done \n");
     }
 
