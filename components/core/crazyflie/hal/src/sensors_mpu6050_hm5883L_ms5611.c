@@ -306,20 +306,20 @@ void sensorsMpu6050Hmc5883lMs5611WaitDataReady(void)
 
 void processBarometerMeasurements(const uint8_t *buffer)
 {
-                        /* 
-                     NOTE: We use ms5611GetData() instead of simple linear scaling (like for LPS25H).
-                     
-                     Difference from LPS25H:
-                     - LPS25H: Uses simple linear scaling (raw_val / sensitivity).
-                     - MS5611: Requires complex polynomial compensation algorithms using 6 factory calibration coefficients.
-                       1. Calculates 'dT' (Delta Temp) = Difference between actual temp and reference.
-                       2. Calculates Temperature Compensated Pressure using 'dT' to adjust offsets dynamically.
-                     
-                     LPS25H implementation for reference:
+/**
+ * NOTE: This function is currently UNUSED/OBSOLETE.
+ * 
+ * Reason:
+ * We have switched to "Direct Read Mode" for the MS5611 in 'sensorsTask'.
+ * Instead of reading raw data into a buffer via MPU6050 slave mode, we now
+ * call 'ms5611GetData()' directly, which handles all reading and calculation internally.
+ * 
+ * This legacy function was designed to parse raw bytes from the MPU6050 I2C buffer.
+ * LPS25H implementation reference:
                      sensorData.baro.pressure = (float) rawPressure / LPS25H_LSB_PER_MBAR;
                      sensorData.baro.temperature = LPS25H_TEMP_OFFSET + ((float) rawTemp / LPS25H_LSB_PER_CELSIUS);
                      sensorData.baro.asl = lps25hPressureToAltitude(&sensorData.baro.pressure);
-                     */
+ */
     int32_t rawPressure = ((int32_t)buffer[0] << 16) | ((int32_t)buffer[1] << 8) | buffer[2];
     int32_t rawTemp = ((int32_t)buffer[3] << 16) | ((int32_t)buffer[4] << 8) | buffer[5];
 
