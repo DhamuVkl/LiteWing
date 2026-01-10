@@ -77,7 +77,7 @@ VELOCITY_KI = 0.0
 VELOCITY_KD = 0.0
 
 # Control limits
-MAX_CORRECTION = 0.1  # Maximum control correction allowed
+MAX_CORRECTION = 0.25  # Maximum control correction allowed
 DRIFT_COMPENSATION_RATE = 0.004  # Gentle pull toward zero when moving slowly
 MAX_POSITION_ERROR = 2.0  # Clamp position error to prevent runaway
 PERIODIC_RESET_INTERVAL = 90.0  # Reset integrated position periodically
@@ -1072,10 +1072,19 @@ class PositionHoldGUI:
                 init_csv_logging(logger=self.log_to_output)
 
                 while time.time() - start_time_local < TAKEOFF_TIME and flight_active:
+                    # Calculate corrections to engage drift correction from start
+                    if use_position_hold and sensor_data_ready:
+                        motion_vx, motion_vy = calculate_position_hold_corrections()
+                    else:
+                        motion_vx, motion_vy = 0.0, 0.0
+
                     if not DEBUG_MODE:
-                        cf.commander.send_hover_setpoint(TRIM_VX, TRIM_VY, 0, TARGET_HEIGHT)
+                        # Apply TRIM + Corrections (maintaining axis mapping)
+                        cf.commander.send_hover_setpoint(TRIM_VX + motion_vy, TRIM_VY + motion_vx, 0, TARGET_HEIGHT)
+                        self.log_to_output(f"CMD: VX={TRIM_VX + motion_vy:.3f}, VY={TRIM_VY + motion_vx:.3f}, Z={TARGET_HEIGHT:.2f}")
+                    
                     log_to_csv()
-                    time.sleep(0.01)
+                    time.sleep(CONTROL_UPDATE_RATE)
 
                 # Stabilization
                 flight_phase = "STABILIZING"
@@ -1090,6 +1099,7 @@ class PositionHoldGUI:
                     total_vy = TRIM_VY + motion_vx
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(total_vx, total_vy, 0, TARGET_HEIGHT)
+                        self.log_to_output(f"CMD: VX={total_vx:.3f}, VY={total_vy:.3f}, Z={TARGET_HEIGHT:.2f}")
                     time.sleep(CONTROL_UPDATE_RATE)
 
                 # Position Hold
@@ -1113,6 +1123,7 @@ class PositionHoldGUI:
                     total_vy = TRIM_VY + motion_vx
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(total_vx, total_vy, 0, TARGET_HEIGHT)
+                        self.log_to_output(f"CMD: VX={total_vx:.3f}, VY={total_vy:.3f}, Z={TARGET_HEIGHT:.2f}")
                     time.sleep(CONTROL_UPDATE_RATE)
 
                 # Landing
@@ -1121,6 +1132,7 @@ class PositionHoldGUI:
                 while time.time() - landing_start < LANDING_TIME and flight_active:
                     if not DEBUG_MODE:
                         cf.commander.send_hover_setpoint(TRIM_VX, TRIM_VY, 0, 0)
+                        self.log_to_output(f"CMD: LAND VX={TRIM_VX:.3f}, VY={TRIM_VY:.3f}")
                     log_to_csv()
                     time.sleep(0.01)
 
