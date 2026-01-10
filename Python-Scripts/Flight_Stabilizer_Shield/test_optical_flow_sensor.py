@@ -21,13 +21,13 @@ from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
 DRONE_URI = "udp://192.168.43.42"
-LOG_PERIOD_MS = 50 # 20 Hz logging interval
+LOG_PERIOD_MS = 10 # 100 Hz logging interval - Critical to capture all flow deltas
 DT = LOG_PERIOD_MS / 1000.0 # DT is the logging interval converted to seconds; used when integrating velocities to compute position displacement between samples.
 DEG_TO_RAD = math.pi / 180.0 # conversion factor from degrees to radians
 ALPHA = 0.7 # IIR smoothing factor for velocity values (0 < ALPHA < 1)
 VELOCITY_THRESHOLD = 0.005  # m/s - velocities below this are clamped to zero
 INVERT_X_AXIS_DEFAULT = True # sensor is mounted inverted on the LiteWing shield
-HISTORY_LENGTH = 400 # number of samples to keep in history for plotting
+HISTORY_LENGTH = 2000 # number of samples to keep in history for plotting
 
 
 def calculate_velocity(delta_value: int, altitude_m: float) -> float:
@@ -118,6 +118,7 @@ class OpticalFlowApp:
         self.position_y = 0.0
         self.last_sample_time: float | None = None
         self.last_console_print = 0.0
+        self.experiment_start_time: float | None = None
 
         # Schedule periodic GUI updates
         self.root.after(100, self._refresh_gui)
@@ -172,7 +173,19 @@ class OpticalFlowApp:
         # If the background connection thread is already running, do nothing
         if self.connection_thread and self.connection_thread.is_alive():
             return
+        
+        # Reset state for new run
         self.stop_event.clear()
+        self.experiment_start_time = time.time()
+        self.time_history.clear()
+        self.vx_history.clear()
+        self.vy_history.clear()
+        self.pos_x_history.clear()
+        self.pos_y_history.clear()
+        self.position_x = 0.0
+        self.position_y = 0.0
+        self.last_sample_time = None
+        
         # Spawn a background thread which manages the Crazyflie connection
         # and receives logged optical flow data without blocking the GUI.
         self.connection_thread = threading.Thread(target=self._connection_worker, daemon=True)
@@ -297,9 +310,8 @@ class OpticalFlowApp:
 
                 # Build relative time axis for plotting
                 times = list(self.time_history)
-                if times:
-                    t0 = times[0]
-                    rel_times = [t - t0 for t in times]
+                if times and self.experiment_start_time:
+                    rel_times = [t - self.experiment_start_time for t in times]
 
                     vx_vals = list(self.vx_history)
                     vy_vals = list(self.vy_history)
@@ -312,8 +324,10 @@ class OpticalFlowApp:
 
                     # Keep the right-most 20 seconds visible in the velocity
                     # subplot for context while streaming.
-                    last_time = rel_times[-1] if rel_times[-1] > 1 else 1
-                    self.ax_vel.set_xlim(max(0, last_time - 20), last_time + 1)
+                    if rel_times:
+                        last_time = rel_times[-1]
+                        self.ax_vel.set_xlim(max(0, last_time - 20), max(20, last_time + 1))
+                    
                     # Combine velocities to compute symmetrical Y limits around
                     # the current min/max so the plots remain stable.
                     combined_vel = vx_vals + vy_vals
@@ -330,14 +344,21 @@ class OpticalFlowApp:
                         # maintaining aspect ratio for accurate XY scaling.
                         xmin, xmax = min(pos_x), max(pos_x)
                         ymin, ymax = min(pos_y), max(pos_y)
-                        span_x = max(0.1, xmax - xmin)
-                        span_y = max(0.1, ymax - ymin)
+                        
+                        # Use the same span for both axes to prevent distortion/squashing
+                        span_x = xmax - xmin
+                        span_y = ymax - ymin
+                        max_span = max(0.2, span_x, span_y) # Minimum 20cm view
+                        
                         center_x = (xmin + xmax) / 2
                         center_y = (ymin + ymax) / 2
-                        pad_x = span_x * 0.4
-                        pad_y = span_y * 0.4
-                        self.ax_pos.set_xlim(center_x - pad_x, center_x + pad_x)
-                        self.ax_pos.set_ylim(center_y - pad_y, center_y + pad_y)
+                        
+                        # Apply uniform padding
+                        pad = max_span * 0.2
+                        half_view = (max_span / 2) + pad
+                        
+                        self.ax_pos.set_xlim(center_x - half_view, center_x + half_view)
+                        self.ax_pos.set_ylim(center_y - half_view, center_y + half_view)
 
                     self.canvas.draw_idle()
 
