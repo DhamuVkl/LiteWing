@@ -10,6 +10,9 @@ What you'll learn:
     - Using manual (joystick) control with position hold
 """
 
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
 import time
 from litewing import LiteWing
 

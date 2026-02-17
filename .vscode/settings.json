@@ -16,5 +16,6 @@
   "C_Cpp.errorSquiggles": "disabled",
   "idf.espIdfPathWin": "C:\\Users\\sdham\\esp\\v4.4.8\\esp-idf",
   "idf.toolsPathWin": "C:\\Users\\sdham\\.espressif",
-  "idf.pythonInstallPath": "C:\\Users\\sdham\\.espressif\\tools\\idf-python\\3.8.7\\python.exe"
+  "idf.pythonInstallPath": "C:\\Users\\sdham\\.espressif\\tools\\idf-python\\3.8.7\\python.exe",
+  "idf.currentSetup": "C:\\Users\\sdham\\esp\\v4.4.8\\esp-idf"
 }
