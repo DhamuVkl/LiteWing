@@ -133,7 +133,8 @@ class _Defaults:
     NP_LINK_SETUP_DELAY = 0.12
 
     # === INTERNAL CONSTANTS ===
-    DEG_TO_RAD = 3.1415926535 / 180.0
+    import math
+    DEG_TO_RAD = math.pi / 180.0
 
 
 # Singleton instance that the library uses

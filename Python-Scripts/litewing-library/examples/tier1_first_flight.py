@@ -2,7 +2,6 @@
 LiteWing Example — Tier 1: Beginner
 =====================================
 Your first flight! Connect, take off, hover, and land.
-Based on the original hellow_litewing.py pattern.
 
 What you'll learn:
     - How to connect to the drone
@@ -12,7 +11,7 @@ What you'll learn:
 """
 
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from litewing import LiteWing
 
@@ -20,8 +19,8 @@ from litewing import LiteWing
 drone = LiteWing("192.168.43.42")
 
 # Set flight parameters
-drone.target_height = 0.01    # Hover at 30cm
-drone.hover_duration = 1    # Hover for 10 seconds
+drone.target_height = 0.3    # Hover at 30cm
+drone.hover_duration = 10    # Hover for 10 seconds
 
 # Define what happens during flight
 def my_flight(drone_ref, cf, has_pos_hold):
