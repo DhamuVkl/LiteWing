@@ -197,10 +197,11 @@ class LiteWing:
         self._leds.attach(cf)
 
         # Start sensor logging
-        self._log_motion, self._log_battery = setup_sensor_logging(
+        self._log_motion, self._log_battery, self._log_imu = setup_sensor_logging(
             cf,
             motion_callback=self._motion_callback,
             battery_callback=self._battery_callback,
+            imu_callback=self._imu_callback,
             sensor_period_ms=self.sensor_update_rate,
             logger=self._logger_fn,
         )
@@ -242,7 +243,8 @@ class LiteWing:
         try:
             log_m = getattr(self, '_log_motion', None)
             log_b = getattr(self, '_log_battery', None)
-            stop_logging_configs(log_m, log_b)
+            log_i = getattr(self, '_log_imu', None)
+            stop_logging_configs(log_m, log_b, log_i)
         except Exception:
             pass
         try:
@@ -662,6 +664,15 @@ class LiteWing:
         if voltage > 0:
             self._sensors.battery_voltage = voltage
             self._sensors.battery_data_ready = True
+
+    def _imu_callback(self, timestamp, data, logconf):
+        """Internal: called when new IMU data arrives."""
+        self._sensors.roll = data.get("stabilizer.roll", 0.0)
+        self._sensors.pitch = data.get("stabilizer.pitch", 0.0)
+        self._sensors.yaw = data.get("stabilizer.yaw", 0.0)
+        self._sensors.gyro_x = data.get("gyro.x", 0.0)
+        self._sensors.gyro_y = data.get("gyro.y", 0.0)
+        self._sensors.gyro_z = data.get("gyro.z", 0.0)
 
     def set_logger(self, fn):
         """

@@ -2,6 +2,11 @@
 LiteWing Internal — Connection Management
 ============================================
 Handles cflib initialization, SyncCrazyflie connections, and log config setup.
+
+Log groups (each limited to ~26 bytes per CRTP packet):
+    - Motion: deltaX, deltaY, stateEstimate.z, range.zrange
+    - Battery: pm.vbat
+    - IMU: stabilizer.roll/pitch/yaw, gyro.x/y/z
 """
 
 import time
@@ -9,22 +14,25 @@ from cflib.crazyflie.log import LogConfig
 
 
 def setup_sensor_logging(cf, motion_callback, battery_callback,
+                         imu_callback=None,
                          sensor_period_ms=10, logger=None):
     """
-    Set up cflib log configurations for motion and battery sensor data.
+    Set up cflib log configurations for motion, battery, and IMU data.
 
     Args:
         cf: Crazyflie instance.
         motion_callback: Callback function for motion data.
         battery_callback: Callback function for battery data.
-        sensor_period_ms: Motion sensor polling period.
+        imu_callback: Callback function for IMU data (attitude + gyro).
+        sensor_period_ms: Motion/IMU sensor polling period.
         logger: Optional logging function.
 
     Returns:
-        (log_motion, log_battery): LogConfig instances, or (None, None) on failure.
+        (log_motion, log_battery, log_imu): LogConfig instances.
     """
     log_motion = LogConfig(name="Motion", period_in_ms=sensor_period_ms)
     log_battery = LogConfig(name="Battery", period_in_ms=500)
+    log_imu = LogConfig(name="IMU", period_in_ms=sensor_period_ms)
 
     try:
         toc = cf.log.toc.toc
@@ -71,15 +79,42 @@ def setup_sensor_logging(cf, motion_callback, battery_callback,
                 if logger:
                     logger(f"Battery variable not found: {var_name}")
 
+        # IMU variables (attitude + gyroscope)
+        imu_variables = [
+            ("stabilizer.roll", "float"),
+            ("stabilizer.pitch", "float"),
+            ("stabilizer.yaw", "float"),
+            ("gyro.x", "float"),
+            ("gyro.y", "float"),
+            ("gyro.z", "float"),
+        ]
+        added_imu = []
+        for var_name, var_type in imu_variables:
+            group, name = var_name.split(".")
+            if group in toc and name in toc[group]:
+                try:
+                    log_imu.add_variable(var_name, var_type)
+                    added_imu.append(var_name)
+                except Exception as e:
+                    if logger:
+                        logger(f"Failed to add IMU variable {var_name}: {e}")
+            else:
+                if logger:
+                    logger(f"IMU variable not found: {var_name}")
+
         # Attach callbacks
         log_motion.data_received_cb.add_callback(motion_callback)
         if added_battery:
             log_battery.data_received_cb.add_callback(battery_callback)
+        if added_imu and imu_callback:
+            log_imu.data_received_cb.add_callback(imu_callback)
 
         # Add configs to Crazyflie
         cf.log.add_config(log_motion)
         if added_battery:
             cf.log.add_config(log_battery)
+        if added_imu:
+            cf.log.add_config(log_imu)
 
         time.sleep(0.5)
 
@@ -87,27 +122,35 @@ def setup_sensor_logging(cf, motion_callback, battery_callback,
         if not log_motion.valid:
             if logger:
                 logger("ERROR: Motion log configuration invalid!")
-            return None, None
+            return None, None, None
 
         if added_battery and not log_battery.valid:
             if logger:
                 logger("WARNING: Battery log configuration invalid!")
             log_battery = None
 
+        if added_imu and not log_imu.valid:
+            if logger:
+                logger("WARNING: IMU log configuration invalid!")
+            log_imu = None
+
         # Start logging
         log_motion.start()
         if log_battery:
             log_battery.start()
+        if log_imu:
+            log_imu.start()
 
         time.sleep(0.5)
 
         if logger:
             logger(
                 f"Logging started — Motion: {len(added_motion)} vars, "
-                f"Battery: {len(added_battery)} vars"
+                f"Battery: {len(added_battery)} vars, "
+                f"IMU: {len(added_imu)} vars"
             )
 
-        return log_motion, log_battery
+        return log_motion, log_battery, log_imu
 
     except Exception as e:
         if logger:
@@ -140,7 +183,7 @@ def apply_firmware_parameters(cf, thrust_base, z_pos_kp, z_vel_kp, logger=None):
             logger(f"WARNING: Failed to set firmware parameters: {str(e)}")
 
 
-def stop_logging_configs(log_motion, log_battery, logger=None):
+def stop_logging_configs(log_motion, log_battery, log_imu=None, logger=None):
     """Safely stop all log configurations."""
     if log_motion:
         try:
@@ -150,5 +193,10 @@ def stop_logging_configs(log_motion, log_battery, logger=None):
     if log_battery:
         try:
             log_battery.stop()
+        except Exception:
+            pass
+    if log_imu:
+        try:
+            log_imu.stop()
         except Exception:
             pass

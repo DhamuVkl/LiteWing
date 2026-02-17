@@ -42,6 +42,14 @@ print()
 print(f"  Flow dX:     {sensors.delta_x}")
 print(f"  Flow dY:     {sensors.delta_y}")
 print()
+print(f"  Roll:        {sensors.roll:7.2f}°")
+print(f"  Pitch:       {sensors.pitch:7.2f}°")
+print(f"  Yaw:         {sensors.yaw:7.2f}°")
+print()
+print(f"  Gyro X:      {sensors.gyro_x:8.2f} °/s")
+print(f"  Gyro Y:      {sensors.gyro_y:8.2f} °/s")
+print(f"  Gyro Z:      {sensors.gyro_z:8.2f} °/s")
+print()
 print("=" * 50)
 
 # Live dashboard for 15 seconds
@@ -55,7 +63,7 @@ try:
             f"  [{i+1:2d}]  "
             f"Bat: {s.battery:.2f}V  |  "
             f"H: {s.height:.3f}m  |  "
-            f"Pos: ({s.x:.2f}, {s.y:.2f})  |  "
+            f"R: {s.roll:6.1f}°  P: {s.pitch:6.1f}°  Y: {s.yaw:6.1f}°  |  "
             f"Vel: ({s.vx:.3f}, {s.vy:.3f})"
         )
         time.sleep(0.5)

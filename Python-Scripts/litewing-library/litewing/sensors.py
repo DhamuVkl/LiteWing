@@ -6,6 +6,7 @@ Access live sensor readings from the drone.
 The drone has several sensors:
     - VL53L1x ToF (Time-of-Flight) laser — measures height to the ground
     - PMW3901 optical flow sensor — tracks ground movement for velocity/position
+    - IMU (accelerometer + gyroscope) — measures orientation and motion
     - Battery voltage monitor — tracks remaining power
 
 Usage:
@@ -33,6 +34,15 @@ class SensorData:
         battery (float): Battery voltage (volts).
         delta_x (int): Raw optical flow delta X (sensor units).
         delta_y (int): Raw optical flow delta Y (sensor units).
+        roll (float): Roll angle (degrees).
+        pitch (float): Pitch angle (degrees).
+        yaw (float): Yaw angle (degrees).
+        acc_x (float): Accelerometer X (g).
+        acc_y (float): Accelerometer Y (g).
+        acc_z (float): Accelerometer Z (g).
+        gyro_x (float): Gyroscope X (deg/s).
+        gyro_y (float): Gyroscope Y (deg/s).
+        gyro_z (float): Gyroscope Z (deg/s).
     """
 
     def __init__(self):
@@ -45,6 +55,16 @@ class SensorData:
         self.battery = 0.0
         self.delta_x = 0
         self.delta_y = 0
+        # IMU data
+        self.roll = 0.0
+        self.pitch = 0.0
+        self.yaw = 0.0
+        self.acc_x = 0.0
+        self.acc_y = 0.0
+        self.acc_z = 0.0
+        self.gyro_x = 0.0
+        self.gyro_y = 0.0
+        self.gyro_z = 0.0
 
     def __repr__(self):
         return (
@@ -65,6 +85,16 @@ class _SensorState:
         self.sensor_data_ready = False
         self.battery_data_ready = False
         self.last_sensor_heartbeat = time.time()
+        # IMU state
+        self.roll = 0.0
+        self.pitch = 0.0
+        self.yaw = 0.0
+        self.acc_x = 0.0
+        self.acc_y = 0.0
+        self.acc_z = 0.0
+        self.gyro_x = 0.0
+        self.gyro_y = 0.0
+        self.gyro_z = 0.0
 
     def snapshot(self, position_engine):
         """Create a SensorData snapshot from current internal state."""
@@ -78,4 +108,14 @@ class _SensorState:
         s.battery = self.battery_voltage
         s.delta_x = position_engine.delta_x
         s.delta_y = position_engine.delta_y
+        # IMU
+        s.roll = self.roll
+        s.pitch = self.pitch
+        s.yaw = self.yaw
+        s.acc_x = self.acc_x
+        s.acc_y = self.acc_y
+        s.acc_z = self.acc_z
+        s.gyro_x = self.gyro_x
+        s.gyro_y = self.gyro_y
+        s.gyro_z = self.gyro_z
         return s
