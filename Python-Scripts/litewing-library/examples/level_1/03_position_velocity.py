@@ -15,9 +15,6 @@ the drone is in the air. On the ground, optical flow may give
 noisy readings depending on surface texture.
 """
 
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-
 import time
 from litewing import LiteWing
 

@@ -7,11 +7,11 @@ LiteWing removes the low-level plumbing from drone programming while keeping the
 ## Installation
 
 ```bash
-# From the project directory
-pip install -e .
+# Navigate to the litewing-library folder
+cd litewing-library
 
-# Or install from source
-pip install .
+# Install in development mode (recommended for students)
+pip install -e .
 ```
 
 ### Requirements
@@ -20,7 +20,21 @@ pip install .
 
 ## Quick Start
 
-### Tier 1 — Beginner: First Flight
+### Level 1 — Read Sensors (No Flying!)
+
+```python
+from litewing import LiteWing
+import time
+
+drone = LiteWing("192.168.43.42")
+drone.connect()          # Connect, no motors!
+time.sleep(2)            # Wait for sensor data
+print(f"Battery: {drone.battery:.2f}V")
+print(f"Height:  {drone.height:.3f}m")
+drone.disconnect()
+```
+
+### Level 2 — First Flight
 
 ```python
 from litewing import LiteWing
@@ -32,20 +46,7 @@ drone.arm()
 drone.fly(hover_duration=10)   # Takeoff, hover 10s, land
 ```
 
-### Tier 2 — Intermediate: Sensors & Manual Control
-
-```python
-from litewing import LiteWing
-
-drone = LiteWing("192.168.43.42")
-drone.trim_forward = 0.02      # Correct drift
-drone.hold_mode = "current"    # Hold at current position on key release
-
-drone.arm()
-drone.start_manual_control()   # WASD keyboard control
-```
-
-### Tier 3 — Advanced: PID Tuning & Waypoints
+### Level 3 — PID Tuning & Waypoints
 
 ```python
 from litewing import LiteWing
@@ -61,7 +62,7 @@ square = [(0.5, 0), (0.5, -0.5), (0, -0.5), (0, 0)]
 
 def mission(drone_ref, cf, has_pos_hold):
     from litewing._flight_engine import run_waypoint_maneuver
-    drone_ref.set_led_color(0, 255, 0)   # Green = navigating
+    drone_ref.set_led_color(0, 255, 0)
     run_waypoint_maneuver(drone_ref, cf, has_pos_hold, square)
     drone_ref.clear_leds()
 
@@ -97,7 +98,7 @@ litewing-library/
 │   ├── __init__.py         # Public exports: LiteWing, SensorData, PIDConfig
 │   ├── litewing.py         # Main LiteWing class
 │   ├── config.py           # All default constants
-│   ├── pid.py              # PID controller (public)
+│   ├── pid.py              # PID controller
 │   ├── sensors.py          # SensorData snapshot class
 │   ├── position_hold.py    # Position hold controller
 │   ├── manual_control.py   # Joystick/keyboard control
@@ -108,10 +109,10 @@ litewing-library/
 │   ├── _position.py        # Internal: dead reckoning
 │   ├── _flight_engine.py   # Internal: flight state machine
 │   └── _safety.py          # Internal: link/battery checks
-├── examples/               # Example scripts
-│   ├── tier1_first_flight.py
-│   ├── tier2_sensors_and_control.py
-│   └── tier3_pid_and_waypoints.py
+├── examples/               # Example scripts (by level)
+│   ├── level_1/            # Sensor reading — no flying
+│   ├── level_2/            # Basic flight control
+│   └── level_3/            # PID tuning, waypoints, advanced
 └── tests/                  # Unit tests
     └── test_litewing.py
 ```

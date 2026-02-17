@@ -11,9 +11,6 @@ What you'll learn:
     - Reading live sensor data
 """
 
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-
 import time
 from litewing import LiteWing
 
