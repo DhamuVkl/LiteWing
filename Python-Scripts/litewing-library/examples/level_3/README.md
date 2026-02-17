@@ -5,4 +5,4 @@
 # - Manual (joystick) control
 # - Waypoint navigation
 # - Firmware parameter tuning
-# - LED control
+

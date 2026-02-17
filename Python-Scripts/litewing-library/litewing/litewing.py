@@ -396,9 +396,23 @@ class LiteWing:
         """
         Arm the drone — prepare it for flight.
 
-        This must be called before takeoff. Arming checks that the connection
-        is ready and initializes the flight controller.
+        This must be called before takeoff. Arming initializes the
+        flight commander so motors can spin.
         """
+        if self._scf is None:
+            raise RuntimeError("Not connected! Call connect() first.")
+
+        cf = self._cf_instance
+        if not self.debug_mode:
+            cf.commander.send_setpoint(0, 0, 0, 0)
+            time.sleep(0.1)
+            cf.param.set_value("commander.enHighLevel", "1")
+            time.sleep(0.5)
+
+        self._flight_active = True
+        self._position_engine.reset()
+        self._position_hold.reset()
+
         if self._logger_fn:
             self._logger_fn("Drone armed and ready!")
 
@@ -413,8 +427,88 @@ class LiteWing:
             height: Target height in meters (default: drone.target_height).
             speed: Not used yet, reserved for future takeoff speed control.
         """
+        if self._scf is None:
+            raise RuntimeError("Not connected! Call connect() first.")
+        if not self._flight_active:
+            raise RuntimeError("Not armed! Call arm() first.")
+
         if height is not None:
             self.target_height = height
+
+        cf = self._cf_instance
+        self._flight_phase = "TAKEOFF"
+        if self._logger_fn:
+            self._logger_fn(f"Taking off to {self.target_height}m...")
+
+        # Start CSV logging if enabled
+        if self.enable_csv_logging and not self._flight_logger.is_logging:
+            self._flight_logger.start(logger=self._logger_fn)
+
+        takeoff_start = time.time()
+        takeoff_height_start = self._sensors.height
+
+        while (time.time() - takeoff_start < self.takeoff_time and
+               self._flight_active):
+            if not self.debug_mode:
+                # Position hold during takeoff if height is sufficient
+                if (self._sensors.sensor_data_ready and
+                        self._sensors.height > 0.04):
+                    mvx, mvy = self._position_hold.calculate_corrections(
+                        self._position_engine.x, self._position_engine.y,
+                        self._position_engine.vx, self._position_engine.vy,
+                        self._sensors.height, True
+                    )
+                else:
+                    mvx, mvy = 0.0, 0.0
+
+                total_vx = self.trim_forward + mvy
+                total_vy = self.trim_right + mvx
+
+                # Takeoff ramp
+                if self.enable_takeoff_ramp:
+                    elapsed = time.time() - takeoff_start
+                    progress = min(1.0, elapsed / self.takeoff_time)
+                    cmd_height = takeoff_height_start + (
+                        self.target_height - takeoff_height_start
+                    ) * progress
+                else:
+                    cmd_height = self.target_height
+
+                cf.commander.send_hover_setpoint(total_vx, total_vy, 0, cmd_height)
+
+            self._log_csv_if_active()
+            time.sleep(self.control_update_rate)
+
+        # Post-takeoff safety check
+        if self.enable_height_sensor_safety and not self.debug_mode:
+            height_change = self._sensors.height - takeoff_height_start
+            if height_change < self._height_sensor_min_change:
+                cf.commander.send_setpoint(0, 0, 0, 0)
+                self._flight_active = False
+                raise RuntimeError(
+                    f"EMERGENCY: Height sensor failure! "
+                    f"Height stuck at {self._sensors.height:.3f}m"
+                )
+
+        # Stabilize at hover height
+        self._flight_phase = "HOVERING"
+        stab_start = time.time()
+        while (time.time() - stab_start < 2.0 and self._flight_active):
+            if not self.debug_mode:
+                if self._sensors.sensor_data_ready:
+                    mvx, mvy = self._position_hold.calculate_corrections(
+                        self._position_engine.x, self._position_engine.y,
+                        self._position_engine.vx, self._position_engine.vy,
+                        self._sensors.height, True
+                    )
+                else:
+                    mvx, mvy = 0.0, 0.0
+                cf.commander.send_hover_setpoint(
+                    self.trim_forward + mvy, self.trim_right + mvx,
+                    0, self.target_height
+                )
+            self._log_csv_if_active()
+            time.sleep(self.control_update_rate)
 
     def land(self):
         """
@@ -422,7 +516,37 @@ class LiteWing:
 
         Descends to ground and stops motors.
         """
+        if self._scf is None or not self._flight_active:
+            self._flight_active = False
+            return
+
+        cf = self._cf_instance
+        self._flight_phase = "LANDING"
+        if self._logger_fn:
+            self._logger_fn("Landing...")
+
+        land_start = time.time()
+        while (time.time() - land_start < self.landing_time and
+               self._flight_active):
+            if not self.debug_mode:
+                cf.commander.send_hover_setpoint(
+                    self.trim_forward, self.trim_right, 0, 0
+                )
+            self._log_csv_if_active()
+            time.sleep(0.01)
+
+        # Stop motors
+        if not self.debug_mode:
+            cf.commander.send_setpoint(0, 0, 0, 0)
+
         self._flight_active = False
+        self._flight_phase = "IDLE"
+
+        # Stop CSV logging
+        self._flight_logger.stop(logger=self._logger_fn)
+
+        if self._logger_fn:
+            self._logger_fn("Landed!")
 
     def emergency_stop(self):
         """
@@ -435,7 +559,7 @@ class LiteWing:
         self._manual_active = False
         if self._scf and not self.debug_mode:
             try:
-                self._scf.cf.commander.send_setpoint(0, 0, 0, 0)
+                self._cf_instance.commander.send_setpoint(0, 0, 0, 0)
             except Exception:
                 pass
         self._leds.clear()
@@ -444,10 +568,43 @@ class LiteWing:
         """
         Wait (hover in place) for the specified duration.
 
+        Actively maintains position hold while waiting.
+
         Args:
             seconds: How long to hover in seconds.
         """
-        time.sleep(seconds)
+        if self._scf is None or not self._flight_active:
+            # Not in flight — just sleep
+            time.sleep(seconds)
+            return
+
+        cf = self._cf_instance
+        start = time.time()
+        while (time.time() - start < seconds and self._flight_active):
+            if not self.debug_mode:
+                if self._sensors.sensor_data_ready:
+                    mvx, mvy = self._position_hold.calculate_corrections(
+                        self._position_engine.x, self._position_engine.y,
+                        self._position_engine.vx, self._position_engine.vy,
+                        self._sensors.height, True
+                    )
+                else:
+                    mvx, mvy = 0.0, 0.0
+                cf.commander.send_hover_setpoint(
+                    self.trim_forward + mvy, self.trim_right + mvx,
+                    0, self.target_height
+                )
+            self._log_csv_if_active()
+            time.sleep(self.control_update_rate)
+
+    def _log_csv_if_active(self):
+        """Log a CSV row if flight logging is active."""
+        if self._flight_logger.is_logging:
+            self._flight_logger.log_row(
+                self._position_engine.x, self._position_engine.y,
+                self._sensors.height, self._sensors.range_height,
+                self._position_engine.vx, self._position_engine.vy,
+            )
 
     # === Movement Commands (Tier 1) ===
 
