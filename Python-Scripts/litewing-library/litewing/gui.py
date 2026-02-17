@@ -10,9 +10,10 @@ Usage:
     live_dashboard(LiteWing("192.168.43.42"))
 
 Available functions:
-    live_dashboard(drone)    — Full 4-panel dashboard
-    live_height_plot(drone)  — Height: filtered vs raw
-    live_imu_plot(drone)     — IMU: roll, pitch, yaw
+    live_dashboard(drone)      — Full 4-panel dashboard
+    live_height_plot(drone)    — Height: filtered vs raw
+    live_imu_plot(drone)       — IMU: roll, pitch, yaw
+    live_position_plot(drone)  — XY position trail (dead reckoning)
 """
 
 import time
@@ -104,6 +105,8 @@ class _DataCollector:
         self.gyro_x = deque(maxlen=max_points)
         self.gyro_y = deque(maxlen=max_points)
         self.gyro_z = deque(maxlen=max_points)
+        self.x = deque(maxlen=max_points)
+        self.y = deque(maxlen=max_points)
         self._start_time = time.time()
 
     def start(self):
@@ -132,6 +135,8 @@ class _DataCollector:
                 self.gyro_x.append(s.gyro_x)
                 self.gyro_y.append(s.gyro_y)
                 self.gyro_z.append(s.gyro_z)
+                self.x.append(s.x)
+                self.y.append(s.y)
             except Exception:
                 pass
             time.sleep(self.interval)
@@ -368,6 +373,94 @@ def live_imu_plot(drone, max_points=200, update_ms=100):
         if gyro:
             margin = max(abs(min(gyro)), abs(max(gyro)), 1) * 0.3
             ax_gyro.set_ylim(min(gyro) - margin, max(gyro) + margin)
+
+    ani = animation.FuncAnimation(fig, update, interval=update_ms, cache_frame_data=False)
+
+    try:
+        plt.show()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        collector.stop()
+        drone.disconnect()
+
+
+def live_position_plot(drone, max_points=500, update_ms=100):
+    """
+    Open a live 2D XY position plot showing the drone's movement trail.
+    Uses dead reckoning from the PMW3901 optical flow sensor.
+
+    The plot shows:
+      - Movement trail (fading older positions)
+      - Current position (bright dot)
+      - Start position marker
+
+    Args:
+        drone: LiteWing instance (will auto-connect if needed).
+        max_points: Number of trail points to keep.
+        update_ms: Plot refresh interval in milliseconds.
+    """
+    _check_matplotlib()
+    _apply_dark_theme()
+    _ensure_connected(drone)
+
+    collector = _DataCollector(drone, max_points=max_points, interval_ms=update_ms)
+    collector.start()
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    fig.suptitle("LiteWing — Position Trail (Dead Reckoning)", color=COLORS["cyan"])
+
+    # Trail line
+    trail_line, = ax.plot([], [], color=COLORS["cyan"], linewidth=1.5, alpha=0.6)
+    # Current position dot
+    current_dot, = ax.plot([], [], 'o', color=COLORS["green"], markersize=10, zorder=5)
+    # Start marker
+    start_dot, = ax.plot([], [], 's', color=COLORS["red"], markersize=10,
+                         label="Start", zorder=5)
+
+    ax.set_xlabel("X position (meters)")
+    ax.set_ylabel("Y position (meters)")
+    ax.legend(loc="upper right", fontsize=9)
+    ax.grid(True)
+
+    # Text annotation for coordinates
+    coord_text = ax.text(
+        0.02, 0.98, "", transform=ax.transAxes,
+        fontsize=10, verticalalignment='top',
+        color=COLORS["green"],
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='#2a2a3d', alpha=0.8)
+    )
+
+    def update(frame):
+        # Negate X to match real-world direction (optical flow sensor convention)
+        x = [-v for v in collector.x]
+        y = list(collector.y)
+        if len(x) < 2:
+            return
+
+        # Trail
+        trail_line.set_data(x, y)
+
+        # Current position
+        current_dot.set_data([x[-1]], [y[-1]])
+
+        # Start position
+        start_dot.set_data([x[0]], [y[0]])
+
+        # Equal scaling — compute square bounds manually to avoid
+        # matplotlib 'Ignoring fixed y limits' warning
+        x_min, x_max = min(x), max(x)
+        y_min, y_max = min(y), max(y)
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+        half = max(x_range, y_range, 0.1) / 2 + 0.05
+        cx = (x_max + x_min) / 2
+        cy = (y_max + y_min) / 2
+        ax.set_xlim(cx - half, cx + half)
+        ax.set_ylim(cy - half, cy + half)
+
+        # Coordinate text
+        coord_text.set_text(f"X: {x[-1]:.3f} m\nY: {y[-1]:.3f} m")
 
     ani = animation.FuncAnimation(fig, update, interval=update_ms, cache_frame_data=False)
 
