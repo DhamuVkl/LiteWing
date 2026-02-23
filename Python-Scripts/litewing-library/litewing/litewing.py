@@ -758,7 +758,7 @@ class LiteWing:
 
     # === Advanced Flight (Tier 3) ===
 
-    def fly_to(self, x, y, threshold=None):
+    def fly_to(self, x, y, speed=0.3, threshold=None):
         """
         Fly to an absolute position (x, y) using position hold.
 
@@ -768,23 +768,86 @@ class LiteWing:
         Args:
             x: Target X position in meters.
             y: Target Y position in meters.
+            speed: Maximum velocity setpoint (m/s).
             threshold: How close is "close enough" (meters).
         """
+        if self._scf is None or not self._flight_active:
+            if self._logger_fn:
+                self._logger_fn("Cannot fly_to — not in flight!")
+            return
         if threshold is None:
             threshold = self.waypoint_threshold
-        self._pending_waypoints = [(x, y)]
 
-    def fly_path(self, waypoints, threshold=None):
+        cf = self._cf_instance
+        self._position_hold.set_target(x, y)
+
+        if self._logger_fn:
+            self._logger_fn(
+                f"Flying to ({x:.2f}, {y:.2f}) at {speed:.1f} m/s"
+            )
+
+        move_max_correction = min(speed, self.max_correction)
+
+        start = time.time()
+        while (time.time() - start < self.waypoint_timeout and
+               self._flight_active):
+            dist = ((self._position_engine.x - x) ** 2 +
+                    (self._position_engine.y - y) ** 2) ** 0.5
+            if dist < threshold:
+                break
+
+            if not self.debug_mode and self._sensors.sensor_data_ready:
+                mvx, mvy = self._position_hold.calculate_corrections(
+                    self._position_engine.x, self._position_engine.y,
+                    self._position_engine.vx, self._position_engine.vy,
+                    self._sensors.height, True,
+                    max_correction=move_max_correction,
+                )
+                cf.commander.send_hover_setpoint(
+                    self.trim_forward + mvy, self.trim_right + mvx,
+                    0, self.target_height
+                )
+
+            self._log_csv_if_active()
+            time.sleep(self.control_update_rate)
+
+        # Stabilize at target
+        stab_start = time.time()
+        while (time.time() - stab_start < self.waypoint_stabilization_time and
+               self._flight_active):
+            if not self.debug_mode and self._sensors.sensor_data_ready:
+                mvx, mvy = self._position_hold.calculate_corrections(
+                    self._position_engine.x, self._position_engine.y,
+                    self._position_engine.vx, self._position_engine.vy,
+                    self._sensors.height, True,
+                )
+                cf.commander.send_hover_setpoint(
+                    self.trim_forward + mvy, self.trim_right + mvx,
+                    0, self.target_height
+                )
+            self._log_csv_if_active()
+            time.sleep(self.control_update_rate)
+
+    def fly_path(self, waypoints, speed=0.3, threshold=None):
         """
         Fly through a sequence of (x, y) waypoints.
 
+        This is a BLOCKING call — it returns when all waypoints have
+        been reached or a timeout occurs.
+
         Args:
             waypoints: List of (x, y) tuples.
+            speed: Maximum velocity setpoint (m/s).
             threshold: How close is "close enough" (meters).
         """
         if threshold is None:
             threshold = self.waypoint_threshold
-        self._pending_waypoints = list(waypoints)
+        for i, (x, y) in enumerate(waypoints):
+            if not self._flight_active:
+                break
+            if self._logger_fn:
+                self._logger_fn(f"Waypoint {i + 1}/{len(waypoints)}")
+            self.fly_to(x, y, speed=speed, threshold=threshold)
 
     # === Complete Flight Execution ===
 
