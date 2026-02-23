@@ -72,6 +72,7 @@ class LiteWing:
         self.debug_mode = defaults.DEBUG_MODE
         self.enable_height_sensor_safety = defaults.ENABLE_HEIGHT_SENSOR_SAFETY
         self.enable_csv_logging = defaults.ENABLE_CSV_LOGGING
+        self.enable_sensor_check = True  # Check ToF / flow sensors on connect
         self._height_sensor_min_change = defaults.HEIGHT_SENSOR_MIN_CHANGE
 
         # PID controllers (VISIBLE — learners tune these!)
@@ -259,6 +260,10 @@ class LiteWing:
         self._position_engine.reset()
         self._position_hold.reset()
 
+        # === Sensor health check ===
+        # Read firmware params to verify external sensors initialized OK
+        self._sensor_health = self._check_sensor_health(cf)
+
         self._flight_phase = "CONNECTED"
         if self._logger_fn:
             self._logger_fn("Connected! Sensor data streaming.")
@@ -355,6 +360,52 @@ class LiteWing:
         except Exception:
             pass
 
+    def _check_sensor_health(self, cf):
+        """
+        Check if external sensors (ToF, optical flow) initialized OK.
+
+        Reads firmware params that the drone sets during boot:
+            deck.bcZRanger2  → 1 if VL53L1x ToF sensor initialized
+            deck.bcFlow2     → 1 if PMW3901 optical flow initialized
+
+        Returns:
+            dict: {"tof": bool, "flow": bool} — True if sensor is OK.
+        """
+        health = {"tof": False, "flow": False}
+
+        try:
+            tof_ok = int(cf.param.get_value("deck.bcZRanger2"))
+            flow_ok = int(cf.param.get_value("deck.bcFlow2"))
+
+            health["tof"] = bool(tof_ok)
+            health["flow"] = bool(flow_ok)
+
+            if self._logger_fn:
+                # ToF status
+                if health["tof"]:
+                    self._logger_fn("  [OK] ToF sensor (VL53L1x) detected")
+                else:
+                    self._logger_fn(
+                        "  [FAIL] ToF sensor (VL53L1x) NOT detected!\n"
+                        "         -> Check I2C wiring to the ToF module"
+                    )
+
+                # Optical flow status
+                if health["flow"]:
+                    self._logger_fn("  [OK] Optical flow (PMW3901) detected")
+                else:
+                    self._logger_fn(
+                        "  [FAIL] Optical flow (PMW3901) NOT detected!\n"
+                        "         -> Check SPI wiring to the flow sensor"
+                    )
+        except Exception as e:
+            if self._logger_fn:
+                self._logger_fn(
+                    f"  [WARN] Could not read sensor status: {e}"
+                )
+
+        return health
+
     @property
     def is_connected(self):
         """True if the drone is currently connected."""
@@ -412,6 +463,23 @@ class LiteWing:
         """
         if self._scf is None:
             raise RuntimeError("Not connected! Call connect() first.")
+
+        # Block flight if sensors are missing (safety for students)
+        if self.enable_sensor_check:
+            health = getattr(self, '_sensor_health', {})
+            missing = []
+            if not health.get('tof', False):
+                missing.append('ToF sensor (VL53L1x)')
+            if not health.get('flow', False):
+                missing.append('Optical flow (PMW3901)')
+            if missing:
+                msg = (
+                    "Cannot arm — sensors not detected:\n"
+                    + "\n".join(f"  - {s}" for s in missing)
+                    + "\n\nCheck wiring and power cycle the drone."
+                    + "\nTo skip this check: drone.enable_sensor_check = False"
+                )
+                raise RuntimeError(msg)
 
         cf = self._cf_instance
         if not self.debug_mode:

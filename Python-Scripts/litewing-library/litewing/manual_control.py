@@ -73,6 +73,24 @@ def run_manual_control(drone):
             if has_pos_hold:
                 time.sleep(1.0)
 
+            # Sensor health check
+            if drone.enable_sensor_check:
+                health = drone._check_sensor_health(cf)
+                drone._sensor_health = health
+                missing = []
+                if not health.get('tof', False):
+                    missing.append('ToF sensor (VL53L1x)')
+                if not health.get('flow', False):
+                    missing.append('Optical flow (PMW3901)')
+                if missing:
+                    msg = (
+                        "Cannot fly -- sensors not detected:\n"
+                        + "\n".join(f"  - {s}" for s in missing)
+                        + "\n\nCheck wiring and power cycle the drone."
+                        + "\nTo skip this check: drone.enable_sensor_check = False"
+                    )
+                    raise RuntimeError(msg)
+
             drone._position_engine.reset()
             drone._position_hold.reset()
 
