@@ -36,11 +36,11 @@ drone.takeoff()
 print("\n--- fly_to: Triangle pattern ---")
 
 # Fly forward
-drone.fly_to(0.0, 0.3, speed=0.3)
+drone.fly_to(0.0, 0.5, speed=0.3)
 print(f"  Position: ({drone.position[0]:.2f}, {drone.position[1]:.2f})")
 
 # Fly to the right
-drone.fly_to(-0.3, 0.0, speed=0.3)
+drone.fly_to(-0.5, 0.0, speed=0.3)
 print(f"  Position: ({drone.position[0]:.2f}, {drone.position[1]:.2f})")
 
 # Return to origin

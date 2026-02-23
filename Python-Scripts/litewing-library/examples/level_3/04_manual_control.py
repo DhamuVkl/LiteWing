@@ -17,9 +17,11 @@ Controls:
 Hold modes:
     "current" — release keys → hold at current position (free flight)
     "origin"  — release keys → snap back to launch point (spring mode)
+
+Note: start_manual_control() handles connect, arm, takeoff, and landing
+internally. You do NOT need to call connect() or arm() before this.
 """
 
-import time
 from litewing import LiteWing
 
 drone = LiteWing("192.168.43.42")
@@ -33,9 +35,6 @@ drone.sensitivity = 0.2  # Default: 0.2 (m/s per key)
 # What happens when you release all keys?
 drone.hold_mode = "current"  # "current" = stay here, "origin" = go back
 
-# How long the drone takes to stop after releasing keys
-drone.momentum_compensation_time = 0.3  # seconds
-
 print("Manual Control Settings:")
 print(f"  Sensitivity: {drone.sensitivity}")
 print(f"  Hold mode:   {drone.hold_mode}")
@@ -43,19 +42,14 @@ print()
 print("Controls: WASD to move, SPACE or Q to land")
 print()
 
-# ── Start flying ─────────────────────────────────────
-drone.connect()
-time.sleep(2)
-
-print(f"Battery: {drone.battery:.2f}V")
-
-# LED indicator
-drone.set_led_color(0, 255, 0)  # Green = manual mode active
-
-# This blocks until you press SPACE/Q or call stop_manual_control()
+# ── Start manual control ─────────────────────────────
+# This starts a background thread that handles:
+#   connect → arm → takeoff → WASD loop → land → disconnect
 drone.start_manual_control()
 
+# Wait for manual control to finish (user presses SPACE/Q to land)
+if drone._manual_thread:
+    drone._manual_thread.join()
+
 print("Manual control ended.")
-drone.clear_leds()
-drone.disconnect()
 print("Done!")

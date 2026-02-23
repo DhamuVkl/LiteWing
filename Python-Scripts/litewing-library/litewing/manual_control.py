@@ -61,10 +61,11 @@ def run_manual_control(drone):
             drone._leds.attach(cf)
 
             # Setup logging
-            log_motion, log_battery = setup_sensor_logging(
+            log_motion, log_battery, log_imu = setup_sensor_logging(
                 cf,
                 motion_callback=drone._motion_callback,
                 battery_callback=drone._battery_callback,
+                imu_callback=getattr(drone, '_imu_callback', None),
                 sensor_period_ms=drone.sensor_update_rate,
                 logger=drone._logger_fn,
             )
@@ -151,6 +152,48 @@ def run_manual_control(drone):
             drone._flight_phase = "MANUAL_CONTROL"
             if drone._logger_fn:
                 drone._logger_fn("Manual control active! Use WASD to move.")
+
+            # Start keyboard listener thread (Windows: msvcrt)
+            import threading as _threading
+            _key_timeout = 0.15  # seconds before key auto-releases
+
+            def _keyboard_listener():
+                """Poll for keyboard input and update _manual_keys."""
+                try:
+                    import msvcrt
+                except ImportError:
+                    if drone._logger_fn:
+                        drone._logger_fn(
+                            "WARNING: msvcrt not available, "
+                            "keyboard control disabled"
+                        )
+                    return
+
+                key_timers = {}
+                while drone._manual_active:
+                    if msvcrt.kbhit():
+                        ch = msvcrt.getch().decode("utf-8", errors="ignore").lower()
+                        if ch in ("q", " "):
+                            # Quit / land
+                            drone._manual_active = False
+                            break
+                        if ch in drone._manual_keys:
+                            drone._manual_keys[ch] = True
+                            key_timers[ch] = time.time()
+
+                    # Auto-release keys after timeout
+                    now = time.time()
+                    for k in list(key_timers):
+                        if now - key_timers[k] > _key_timeout:
+                            drone._manual_keys[k] = False
+                            del key_timers[k]
+
+                    time.sleep(0.02)
+
+            kb_thread = _threading.Thread(
+                target=_keyboard_listener, daemon=True
+            )
+            kb_thread.start()
 
             last_loop_time = time.time()
 
@@ -257,7 +300,7 @@ def run_manual_control(drone):
             pass
     finally:
         drone._flight_logger.stop(logger=drone._logger_fn)
-        stop_logging_configs(log_motion, log_battery)
+        stop_logging_configs(log_motion, log_battery, log_imu)
         drone._leds.detach()
         drone._flight_active = False
         drone._manual_active = False
