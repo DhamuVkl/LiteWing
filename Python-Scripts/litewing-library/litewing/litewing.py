@@ -19,6 +19,7 @@ about sensors, PID tuning, position hold, and flight control.
 
 import time
 import atexit
+import signal
 import threading
 
 from .config import defaults
@@ -132,6 +133,16 @@ class LiteWing:
         # Callbacks for events
         self._on_key_press_cb = None
         self._on_key_release_cb = None
+
+        # === System-wide Ctrl+C emergency stop ===
+        # This ensures pressing Ctrl+C ALWAYS kills motors immediately,
+        # even if the student forgot to add error handling.
+        def _ctrl_c_handler(sig, frame):
+            print("\n Ctrl+C detected — EMERGENCY STOP!")
+            self.emergency_stop()
+            raise SystemExit(1)
+
+        signal.signal(signal.SIGINT, _ctrl_c_handler)
 
     # === Context Manager (with statement) ===
 

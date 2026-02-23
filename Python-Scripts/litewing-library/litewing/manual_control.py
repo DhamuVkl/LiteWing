@@ -172,14 +172,18 @@ def run_manual_control(drone):
                 key_timers = {}
                 while drone._manual_active:
                     if msvcrt.kbhit():
-                        ch = msvcrt.getch().decode("utf-8", errors="ignore").lower()
-                        if ch in ("q", " "):
-                            # Quit / land
+                        ch = msvcrt.getch()
+                        ch_str = ch.decode("utf-8", errors="ignore").lower()
+                        if ch_str in ("q", " ") or ch == b'\x03':
+                            # Quit / land / Ctrl+C
+                            if ch == b'\x03':
+                                print("\n Ctrl+C detected — EMERGENCY STOP!")
+                                drone.emergency_stop()
                             drone._manual_active = False
                             break
-                        if ch in drone._manual_keys:
-                            drone._manual_keys[ch] = True
-                            key_timers[ch] = time.time()
+                        if ch_str in drone._manual_keys:
+                            drone._manual_keys[ch_str] = True
+                            key_timers[ch_str] = time.time()
 
                     # Auto-release keys after timeout
                     now = time.time()

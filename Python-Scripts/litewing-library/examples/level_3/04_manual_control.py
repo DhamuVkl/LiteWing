@@ -53,3 +53,16 @@ if drone._manual_thread:
 
 print("Manual control ended.")
 print("Done!")
+
+# ── For GUI integration ──────────────────────────────
+# If building a GUI (tkinter, PyQt, etc.), you can send key events
+# programmatically instead of using the terminal:
+#
+#   drone.set_key("w", True)    # simulate W pressed
+#   drone.set_key("w", False)   # simulate W released
+#
+#   drone.on_key_press(my_callback)    # register press handler
+#   drone.on_key_release(my_callback)  # register release handler
+#
+# This lets you build custom controllers (buttons, joysticks, etc.)
+# that drive the same manual control loop.
