@@ -2,9 +2,11 @@
 
 Complete reference for every function, class, and property in the `litewing` library.
 
+> **37 public functions and properties** across 8 modules.
+
 ---
 
-## `LiteWing` — Main Class 
+## `LiteWing` — Main Class
 
 The single entry point for all drone operations.
 
@@ -44,7 +46,7 @@ with LiteWing("192.168.43.42") as drone:
 | `position` | `(float, float)` | Current estimated `(x, y)` position in meters. |
 | `velocity` | `(float, float)` | Current estimated `(vx, vy)` velocity in m/s. |
 
-### Flight Commands (Tier 1)
+### Flight Commands
 
 | Method | Description |
 |---|---|
@@ -54,7 +56,7 @@ with LiteWing("192.168.43.42") as drone:
 | `emergency_stop()` | **Immediately** cuts all motors. Drone will fall! Use only in emergencies. |
 | `wait(seconds)` | Hover in place for `seconds` duration. |
 
-### Movement Commands (Tier 1)
+### Movement Commands
 
 | Method | Description |
 |---|---|
@@ -63,7 +65,7 @@ with LiteWing("192.168.43.42") as drone:
 | `left(distance=None, speed=0.2)` | Move left by `distance` meters. |
 | `right(distance=None, speed=0.2)` | Move right by `distance` meters. |
 
-### Position Hold Control (Tier 3)
+### Position Hold Control
 
 | Method | Description |
 |---|---|
@@ -71,25 +73,25 @@ with LiteWing("192.168.43.42") as drone:
 | `disable_position_hold()` | Disable position hold, switch to raw velocity mode. |
 | `reset_position()` | Reset estimated position to `(0, 0)`. Useful when drift accumulates. |
 
-### Advanced Flight (Tier 3)
+### Advanced Flight
 
 | Method | Description |
 |---|---|
 | `fly(maneuver_fn=None, hover_duration=None)` | Execute a complete flight: connect → takeoff → hover/maneuver → land. If `maneuver_fn` is provided, it runs during the hover phase. |
-| `fly_to(x, y, threshold=None)` | Fly to absolute position `(x, y)` using position hold. Blocking. |
-| `fly_path(waypoints, threshold=None)` | Fly through a list of `(x, y)` waypoint tuples. |
+| `fly_to(x, y, speed=0.3, threshold=None)` | Fly to absolute position `(x, y)` using position hold. Blocking. |
+| `fly_path(waypoints, speed=0.3, threshold=None)` | Fly through a list of `(x, y)` waypoint tuples. |
 
-### Manual / Joystick Control (Tier 2–3)
+### Manual / Keyboard Control
 
 | Method | Description |
 |---|---|
-| `start_manual_control()` | Enter joystick mode: takes off and responds to WASD key inputs with position hold. |
-| `stop_manual_control()` | Exit joystick mode: lands and disconnects. |
+| `start_manual_control()` | Full automated flight with WASD control: connect → takeoff → keyboard loop → land. |
+| `stop_manual_control()` | Exit manual mode: lands and disconnects. |
 | `set_key(key, pressed)` | Set state of a manual key (`"w"`, `"a"`, `"s"`, `"d"`). `pressed` = `True`/`False`. |
 | `on_key_press(callback)` | Register a callback for key press events. |
 | `on_key_release(callback)` | Register a callback for key release events. |
 
-### Firmware Parameters (Tier 3)
+### Firmware Parameters
 
 | Method | Description |
 |---|---|
@@ -202,7 +204,7 @@ All properties can be set directly on the `LiteWing` instance.
 
 ---
 
-## `SensorData` — Sensor Snapshot ([sensors.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/sensors.py))
+## `SensorData` — Sensor Snapshot (`sensors.py`)
 
 Returned by `drone.read_sensors()`. Read-only snapshot of all sensor values.
 
@@ -220,7 +222,7 @@ Returned by `drone.read_sensors()`. Read-only snapshot of all sensor values.
 
 ---
 
-## `PIDConfig` — PID Gain Configuration ([pid.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/pid.py))
+## `PIDConfig` — PID Gain Configuration (`pid.py`)
 
 Holds PID gain values. Access via `drone.position_pid` and `drone.velocity_pid`.
 
@@ -232,7 +234,7 @@ Holds PID gain values. Access via `drone.position_pid` and `drone.velocity_pid`.
 
 ---
 
-## `PositionHoldController` ([position_hold.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/position_hold.py))
+## `PositionHoldController` (`position_hold.py`)
 
 Cascaded PID controller for holding drone at a target position.
 
@@ -250,7 +252,7 @@ Cascaded PID controller for holding drone at a target position.
 
 ---
 
-## `LEDController` ([leds.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/leds.py))
+## `LEDController` (`leds.py`)
 
 Controls NeoPixel LEDs on the drone.
 
@@ -265,7 +267,7 @@ Controls NeoPixel LEDs on the drone.
 
 ---
 
-## `FlightLogger` ([logger.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/logger.py))
+## `FlightLogger` (`logger.py`)
 
 Records flight data to CSV files.
 
@@ -293,32 +295,32 @@ Records flight data to CSV files.
 
 ---
 
-## Internal Modules (Hidden)
+## Internal Modules
 
 These are used internally by the library. Learners don't need to touch them.
 
-### `_flight_engine` ([_flight_engine.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/_flight_engine.py))
+### `_flight_engine` (`_flight_engine.py`)
 
 | Function | Description |
 |---|---|
 | `run_flight_sequence(drone, maneuver_fn)` | Full flight lifecycle: connect → takeoff → hover/maneuver → land. |
 | `run_waypoint_maneuver(drone, cf, has_pos_hold, waypoints, ...)` | Navigate through a list of `(x, y)` waypoints with position hold. |
 
-### `manual_control` ([manual_control.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/manual_control.py))
+### `manual_control` (`manual_control.py`)
 
 | Function | Description |
 |---|---|
 | `run_manual_control(drone)` | Full manual control flight: connect → takeoff → keyboard loop → land. |
 
-### `_connection` ([_connection.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/_connection.py))
+### `_connection` (`_connection.py`)
 
 | Function | Description |
 |---|---|
-| `setup_sensor_logging(cf, motion_cb, battery_cb, period_ms)` | Set up cflib LogConfig for motion and battery. Returns `(log_motion, log_battery)`. |
+| `setup_sensor_logging(cf, motion_cb, battery_cb, imu_cb, period_ms)` | Set up cflib LogConfig for motion, battery, and IMU. Returns `(log_motion, log_battery, log_imu)`. |
 | `apply_firmware_parameters(cf, thrust_base, z_pos_kp, z_vel_kp)` | Send custom Z-axis PID values to drone firmware. |
-| `stop_logging_configs(log_motion, log_battery)` | Safely stop all log configurations. |
+| `stop_logging_configs(log_motion, log_battery, log_imu)` | Safely stop all log configurations. |
 
-### `_position` ([_position.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/_position.py))
+### `_position` (`_position.py`)
 
 | Method | Description |
 |---|---|
@@ -327,14 +329,14 @@ These are used internally by the library. Learners don't need to touch them.
 | `PositionEngine.update_from_sensor(dx, dy, altitude)` | Process new sensor data → velocity → position. |
 | `PositionEngine.periodic_reset_check()` | Reset if interval has elapsed. Returns `True` on reset. |
 
-### `_safety` ([_safety.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/_safety.py))
+### `_safety` (`_safety.py`)
 
 | Function | Description |
 |---|---|
 | `check_link_safety(cf, data_ready, last_heartbeat, debug_mode)` | Check connection + sensor freshness. Returns `True` if safe. |
 | `check_battery_safe(voltage, threshold)` | Check battery above threshold. Returns `True` if safe. |
 
-### `_crtp` ([_crtp.py](file:///c:/Users/sdham/Documents/Work_Semicon/LightWing/CODE/LiteWing_Shield/LiteWing/Python-Scripts/Flight_Stabilizer_Shield/litewing/_crtp.py))
+### `_crtp` (`_crtp.py`)
 
 | Function | Description |
 |---|---|
