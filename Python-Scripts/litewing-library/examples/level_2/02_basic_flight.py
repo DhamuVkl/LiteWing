@@ -46,7 +46,7 @@ print(f"Taking off to {drone.target_height}m...")
 drone.takeoff()
 
 print(f"Hovering for {drone.hover_duration}s...")
-drone.wait(drone.hover_duration)
+drone.hover(drone.hover_duration)
 
 print("Landing...")
 drone.land()

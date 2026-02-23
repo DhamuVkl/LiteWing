@@ -76,7 +76,7 @@ print("Firmware parameters applied.")
 # Fly with tuned config
 drone.arm()
 drone.takeoff()
-drone.wait(drone.hover_duration)
+drone.hover(drone.hover_duration)
 drone.land()
 
 drone.disconnect()

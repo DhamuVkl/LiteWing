@@ -9,7 +9,7 @@ Quick Start:
     with LiteWing("192.168.43.42") as drone:
         drone.arm()
         drone.takeoff()
-        drone.forward(0.5, speed=0.2)
+        drone.pitch_forward(0.5, speed=0.2)
         drone.land()
 
 The LiteWing class is your "remote control." It handles all the low-level
@@ -683,9 +683,9 @@ class LiteWing:
                 roll, pitch, yawrate, thrust
             )
 
-    def wait(self, seconds):
+    def hover(self, seconds):
         """
-        Wait (hover in place) for the specified duration.
+        Hover in place for the specified duration.
 
         Actively maintains position hold while waiting.
 
@@ -727,9 +727,9 @@ class LiteWing:
 
     # === Movement Commands (Tier 1) ===
 
-    def forward(self, distance=None, speed=0.2):
+    def pitch_forward(self, distance=None, speed=0.2):
         """
-        Move forward by the specified distance.
+        Pitch forward by the specified distance.
 
         Args:
             distance: Distance in meters (default: drone.maneuver_distance).
@@ -739,9 +739,9 @@ class LiteWing:
             distance = self.maneuver_distance
         self._execute_movement(0.0, distance, speed)
 
-    def backward(self, distance=None, speed=0.2):
+    def pitch_backward(self, distance=None, speed=0.2):
         """
-        Move backward by the specified distance.
+        Pitch backward by the specified distance.
 
         Args:
             distance: Distance in meters (default: drone.maneuver_distance).
@@ -751,9 +751,9 @@ class LiteWing:
             distance = self.maneuver_distance
         self._execute_movement(0.0, -distance, speed)
 
-    def left(self, distance=None, speed=0.2):
+    def roll_left(self, distance=None, speed=0.2):
         """
-        Move left by the specified distance.
+        Roll left by the specified distance.
 
         Args:
             distance: Distance in meters (default: drone.maneuver_distance).
@@ -763,9 +763,9 @@ class LiteWing:
             distance = self.maneuver_distance
         self._execute_movement(distance, 0.0, speed)
 
-    def right(self, distance=None, speed=0.2):
+    def roll_right(self, distance=None, speed=0.2):
         """
-        Move right by the specified distance.
+        Roll right by the specified distance.
 
         Args:
             distance: Distance in meters (default: drone.maneuver_distance).

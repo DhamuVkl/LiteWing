@@ -5,7 +5,7 @@ Record flight data to CSV files for later analysis.
 
 Usage:
     drone.start_logging("my_flight.csv")
-    drone.forward(1.0, 0.2)
+    drone.pitch_forward(1.0, 0.2)
     drone.stop_logging()
 
 The CSV file will contain columns for:

@@ -47,7 +47,7 @@ print(f"  Position: ({drone.position[0]:.2f}, {drone.position[1]:.2f})")
 drone.fly_to(0.0, 0.0, speed=0.3)
 print(f"  Position: ({drone.position[0]:.2f}, {drone.position[1]:.2f})")
 
-drone.wait(2)
+drone.hover(2)
 
 # ── Method 2: fly_path (waypoint list) ───────────────
 print("\n--- fly_path: Square pattern ---")

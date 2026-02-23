@@ -28,7 +28,7 @@ drone.disconnect()
 |---|---|---|
 | `drone.arm()` | Prepare motors for flight | After `connect()`, before `takeoff()` |
 | `drone.takeoff()` | Take off and hover *(blocking)* | After `arm()` |
-| `drone.wait(seconds)` | Hover in place for N seconds | Between maneuvers |
+| `drone.hover(seconds)` | Hover in place for N seconds | Between maneuvers |
 | `drone.land()` | Descend and stop motors | When done flying |
 | `drone.emergency_stop()` | **Kill all motors immediately** | Emergency only! Drone will fall |
 
@@ -37,7 +37,7 @@ drone.disconnect()
 drone.connect()
 drone.arm()
 drone.takeoff()       # drone lifts off
-drone.wait(5)         # hover for 5 seconds
+drone.hover(5)         # hover for 5 seconds
 drone.land()          # come back down
 drone.disconnect()
 ```
@@ -52,19 +52,19 @@ All movement commands are **blocking** — they return when the drone arrives.
 
 | Function | What it does | When to use |
 |---|---|---|
-| `drone.forward(distance, speed)` | Move forward | distance in meters, speed in m/s |
-| `drone.backward(distance, speed)` | Move backward | same as forward |
-| `drone.left(distance, speed)` | Move left | same |
-| `drone.right(distance, speed)` | Move right | same |
+| `drone.pitch_forward(distance, speed)` | Pitch forward | distance in meters, speed in m/s |
+| `drone.pitch_backward(distance, speed)` | Pitch backward | same as forward |
+| `drone.roll_left(distance, speed)` | Roll left | same |
+| `drone.roll_right(distance, speed)` | Roll right | same |
 
 - `distance` defaults to `0.5m` (= `drone.maneuver_distance`)
 - `speed` defaults to `0.2 m/s` (= max velocity setpoint)
 
 **Example:**
 ```python
-drone.forward(0.3)               # 30cm forward at 0.2 m/s
-drone.forward(0.3, speed=0.7)    # same distance, faster
-drone.right(0.5)                 # 50cm to the right
+drone.pitch_forward(0.3)               # 30cm forward at 0.2 m/s
+drone.pitch_forward(0.3, speed=0.7)    # same distance, faster
+drone.roll_right(0.5)                  # 50cm to the right
 ```
 
 > See: `level_3/02_movement_commands.py`
@@ -233,8 +233,8 @@ drone.set_led_color(255, 165, 0)  # Orange
 
 ```python
 def my_pattern(drone):
-    drone.forward(0.3)
-    drone.right(0.3)
+    drone.pitch_forward(0.3)
+    drone.roll_right(0.3)
 
 drone.fly(maneuver_fn=my_pattern)
 ```

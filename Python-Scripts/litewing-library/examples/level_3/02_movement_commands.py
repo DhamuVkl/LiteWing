@@ -36,20 +36,20 @@ drone.takeoff()
 
 # Fly a 30cm square
 print("  → Forward")
-drone.forward(0.3, speed=0.7)
-drone.wait(1)
+drone.pitch_forward(0.3, speed=0.7)
+drone.hover(1)
 
 print("  → Right")
-drone.right(0.3, speed=0.7)
-drone.wait(1)
+drone.roll_right(0.3, speed=0.7)
+drone.hover(1)
 
 print("  → Backward")
-drone.backward(0.3, speed=0.7)
-drone.wait(1)
+drone.pitch_backward(0.3, speed=0.7)
+drone.hover(1)
 
 print("  → Left")
-drone.left(0.3, speed=0.7)
-drone.wait(1)
+drone.roll_left(0.3, speed=0.7)
+drone.hover(1)
 
 print("Square complete!")
 drone.land()

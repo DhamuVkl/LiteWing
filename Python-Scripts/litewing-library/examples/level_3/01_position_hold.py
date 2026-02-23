@@ -52,20 +52,20 @@ drone.takeoff()
 # Phase 1: Normal position hold — GREEN steady
 print("Phase 1: Position hold ON — watch stability")
 drone.set_led_color(0, 255, 0)
-drone.wait(5)
+drone.hover(5)
 
 # Phase 2: Disable position hold — RED fast blink (warning!)
 print("Phase 2: Position hold OFF — observe drift")
 drone.set_led_color(255, 0, 0)
 drone.blink_leds(on_ms=150, off_ms=150)
 drone.disable_position_hold()
-drone.wait(1.5)
+drone.hover(1.5)
 
 # Phase 3: Re-enable position hold — BLUE steady (recovered)
 print("Phase 3: Position hold ON — drone corrects")
 drone.enable_position_hold()
 drone.set_led_color(0, 100, 255)
-drone.wait(3)
+drone.hover(3)
 
 # Landing — clear LEDs
 drone.clear_leds()

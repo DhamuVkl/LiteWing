@@ -31,11 +31,11 @@ print("Logging started!")
 drone.arm()
 drone.takeoff()
 
-drone.forward(0.3, speed=0.7)
-drone.wait(2)
+drone.pitch_forward(0.3, speed=0.7)
+drone.hover(2)
 
-drone.backward(0.3, speed=0.7)
-drone.wait(2)
+drone.pitch_backward(0.3, speed=0.7)
+drone.hover(2)
 
 drone.land()
 
