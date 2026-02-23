@@ -725,14 +725,14 @@ bool sensorsMpu6050Hmc5883lMs5611Test(void)
 #endif
 
 #ifdef SENSORS_ENABLE_PRESSURE_MS5611
-    testStatus &= isBarometerPresent;
-
-    if (testStatus) {
+    if (!isBarometerPresent) {
+        DEBUG_PRINTW("MS5611 not present - barometer disabled, continuing without it.\n");
+    } else {
         isMs5611TestPassed = ms5611SelfTest();
-
-        testStatus &= isMs5611TestPassed;
+        if (!isMs5611TestPassed) {
+            DEBUG_PRINTW("MS5611 self test [FAIL] - continuing without barometer.\n");
+        }
     }
-
 #endif
 
     return testStatus;
