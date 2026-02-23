@@ -304,7 +304,7 @@ void sensorsMpu6050Hmc5883lMs5611WaitDataReady(void)
     xSemaphoreTake(dataReady, portMAX_DELAY);
 }
 
-void processBarometerMeasurements(const uint8_t *buffer)
+void __attribute__((unused)) processBarometerMeasurements(const uint8_t *buffer)
 {
 /**
  * NOTE: This function is currently UNUSED/OBSOLETE.
