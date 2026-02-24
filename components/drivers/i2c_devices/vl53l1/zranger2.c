@@ -62,8 +62,8 @@ static float expCoeff;
 #define RANGE_OUTLIER_LIMIT 5000 // the measured range is in [mm]
 
 // Auto distance mode switching thresholds (hysteresis to prevent oscillation)
-#define SHORT_TO_LONG_THRESHOLD  1150  // Switch to LONG above 1.15m (mm)
-#define LONG_TO_SHORT_THRESHOLD   950  // Switch to SHORT below 0.95m (mm)
+#define SHORT_TO_LONG_THRESHOLD  1200  // Switch to LONG above 1.2m (mm)
+#define LONG_TO_SHORT_THRESHOLD   900  // Switch to SHORT below 0.90m (mm)
 
 // Timing budgets per mode
 #define SHORT_MODE_TIMING_BUDGET_US  25000
