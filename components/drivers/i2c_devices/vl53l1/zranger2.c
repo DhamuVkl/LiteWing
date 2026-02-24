@@ -62,14 +62,14 @@ static float expCoeff;
 #define RANGE_OUTLIER_LIMIT 5000 // the measured range is in [mm]
 
 // Auto distance mode switching thresholds (hysteresis to prevent oscillation)
-#define SHORT_TO_LONG_THRESHOLD  1100  // Switch to LONG above 1.1m (mm)
-#define LONG_TO_SHORT_THRESHOLD   900  // Switch to SHORT below 0.9m (mm)
+#define SHORT_TO_LONG_THRESHOLD  1150  // Switch to LONG above 1.15m (mm)
+#define LONG_TO_SHORT_THRESHOLD   950  // Switch to SHORT below 0.95m (mm)
 
 // Timing budgets per mode
 #define SHORT_MODE_TIMING_BUDGET_US  25000
 #define SHORT_MODE_PERIOD_MS         25
-#define LONG_MODE_TIMING_BUDGET_US   50000
-#define LONG_MODE_PERIOD_MS          50
+#define LONG_MODE_TIMING_BUDGET_US   140000   // 140ms — ST's recommended max for full 4m range
+#define LONG_MODE_PERIOD_MS          145      // Must be >= timing budget + 4ms (per ST docs)
 
 static int16_t range_last = 0;
 
@@ -78,6 +78,7 @@ static bool isInit;
 static VL53L1_Dev_t dev;
 static VL53L1_DistanceModes currentDistanceMode = VL53L1_DISTANCEMODE_SHORT;
 static uint32_t currentTaskPeriodMs = SHORT_MODE_PERIOD_MS;
+static bool modeSwitchPending = false;
 
 /**
  * Recalculate the noise model coefficient from current expStd/expPoint values.
@@ -89,7 +90,7 @@ static void updateNoiseModel(void)
 
 /**
  * Switch the sensor distance mode at runtime.
- * Stops measurement, reconfigures, and restarts.
+ * Stops measurement, reconfigures, restarts with settling delay.
  */
 static void switchDistanceMode(VL53L1_DistanceModes newMode)
 {
@@ -97,6 +98,7 @@ static void switchDistanceMode(VL53L1_DistanceModes newMode)
     return;
 
   VL53L1_StopMeasurement(&dev);
+  vTaskDelay(M2T(10));  // Let sensor fully stop
 
   if (newMode == VL53L1_DISTANCEMODE_SHORT) {
     VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_SHORT);
@@ -130,6 +132,15 @@ static void switchDistanceMode(VL53L1_DistanceModes newMode)
   currentDistanceMode = newMode;
 
   VL53L1_StartMeasurement(&dev);
+
+  // Wait for sensor to settle and produce first valid measurement in new mode
+  vTaskDelay(M2T(currentTaskPeriodMs * 2));
+
+  // Clear any stale interrupt from previous mode and get fresh start
+  VL53L1_clear_interrupt_and_enable_next_range(&dev, VL53L1_DEVICEMEASUREMENTMODE_BACKTOBACK);
+
+  // Signal that we just switched — skip first reading
+  modeSwitchPending = true;
 }
 
 static uint16_t zRanger2GetMeasurement(VL53L1_Dev_t *dev)
@@ -146,9 +157,22 @@ static uint16_t zRanger2GetMeasurement(VL53L1_Dev_t *dev)
     }
 
     status = VL53L1_GetRangingMeasurementData(dev, &rangingData);
-    
-    // Fix: Only use the measurement if the RangeStatus is VL53L1_RANGESTATUS_RANGE_VALID (0)
-    if (status == VL53L1_ERROR_NONE && rangingData.RangeStatus == 0) {
+
+    // Mode-specific range status filtering:
+    // SHORT mode: strict — only accept RANGE_VALID (0)
+    // LONG mode:  also accept NO_WRAP_CHECK_FAIL (6) — wrap-around is
+    //             impossible at drone flight altitudes (1-3m)
+    bool rangeValid = false;
+    if (status == VL53L1_ERROR_NONE) {
+        if (rangingData.RangeStatus == VL53L1_RANGESTATUS_RANGE_VALID) {
+            rangeValid = true;
+        } else if (currentDistanceMode == VL53L1_DISTANCEMODE_LONG &&
+                   rangingData.RangeStatus == VL53L1_RANGESTATUS_RANGE_VALID_NO_WRAP_CHECK_FAIL) {
+            rangeValid = true;
+        }
+    }
+
+    if (rangeValid) {
         range = rangingData.RangeMilliMeter;
     } else {
         range = RANGE_OUTLIER_LIMIT + 1;
@@ -208,10 +232,22 @@ void zRanger2Task(void* arg)
   // Start continuous ranging
   VL53L1_StartMeasurement(&dev);
 
+  // Wait for first measurement to be ready
+  vTaskDelay(M2T(SHORT_MODE_PERIOD_MS * 2));
+
   static int consecutive_errors = 0;
+  lastWakeTime = xTaskGetTickCount();
 
   while (1) {
     vTaskDelayUntil(&lastWakeTime, M2T(currentTaskPeriodMs));
+
+    // After a mode switch, skip first read and reset timing
+    if (modeSwitchPending) {
+      modeSwitchPending = false;
+      consecutive_errors = 0;
+      lastWakeTime = xTaskGetTickCount();  // Reset timing baseline
+      continue;
+    }
 
     uint16_t range_new = zRanger2GetMeasurement(&dev);
 
@@ -239,9 +275,12 @@ void zRanger2Task(void* arg)
       if (consecutive_errors > (int)(1000 / currentTaskPeriodMs)) {
         DEBUG_PRINTW("ZR2: Sensor stuck, restarting acquisition...\n");
         VL53L1_StopMeasurement(&dev);
-        vTaskDelay(M2T(10));
+        vTaskDelay(M2T(50));
         VL53L1_StartMeasurement(&dev);
+        vTaskDelay(M2T(currentTaskPeriodMs * 2));
+        VL53L1_clear_interrupt_and_enable_next_range(&dev, VL53L1_DEVICEMEASUREMENTMODE_BACKTOBACK);
         consecutive_errors = 0;
+        lastWakeTime = xTaskGetTickCount();
       }
     }
   }
