@@ -41,20 +41,96 @@
 #define DEBUG_MODULE "ZR2"
 #include "debug_cf.h"
 
-// Measurement noise model
-static const float expPointA = 2.5f;
-static const float expStdA = 0.0025f; // STD at elevation expPointA [m]
-static const float expPointB = 4.0f;
-static const float expStdB = 0.2f; // STD at elevation expPointB [m]
+// Measurement noise model (defaults for SHORT mode)
+static float expPointA = 2.5f;
+static float expStdA = 0.0025f; // STD at elevation expPointA [m]
+static float expPointB = 4.0f;
+static float expStdB = 0.2f;    // STD at elevation expPointB [m]
 static float expCoeff;
 
+// Noise model constants per distance mode
+#define SHORT_EXP_POINT_A  2.5f
+#define SHORT_EXP_STD_A    0.0025f
+#define SHORT_EXP_POINT_B  4.0f
+#define SHORT_EXP_STD_B    0.2f
+
+#define LONG_EXP_POINT_A   2.5f
+#define LONG_EXP_STD_A     0.005f    // Higher base noise in long mode
+#define LONG_EXP_POINT_B   4.0f
+#define LONG_EXP_STD_B     0.4f      // More noise at distance in long mode
+
 #define RANGE_OUTLIER_LIMIT 5000 // the measured range is in [mm]
+
+// Auto distance mode switching thresholds (hysteresis to prevent oscillation)
+#define SHORT_TO_LONG_THRESHOLD  1100  // Switch to LONG above 1.1m (mm)
+#define LONG_TO_SHORT_THRESHOLD   900  // Switch to SHORT below 0.9m (mm)
+
+// Timing budgets per mode
+#define SHORT_MODE_TIMING_BUDGET_US  25000
+#define SHORT_MODE_PERIOD_MS         25
+#define LONG_MODE_TIMING_BUDGET_US   50000
+#define LONG_MODE_PERIOD_MS          50
 
 static int16_t range_last = 0;
 
 static bool isInit;
 
 static VL53L1_Dev_t dev;
+static VL53L1_DistanceModes currentDistanceMode = VL53L1_DISTANCEMODE_SHORT;
+static uint32_t currentTaskPeriodMs = SHORT_MODE_PERIOD_MS;
+
+/**
+ * Recalculate the noise model coefficient from current expStd/expPoint values.
+ */
+static void updateNoiseModel(void)
+{
+  expCoeff = logf(expStdB / expStdA) / (expPointB - expPointA);
+}
+
+/**
+ * Switch the sensor distance mode at runtime.
+ * Stops measurement, reconfigures, and restarts.
+ */
+static void switchDistanceMode(VL53L1_DistanceModes newMode)
+{
+  if (newMode == currentDistanceMode)
+    return;
+
+  VL53L1_StopMeasurement(&dev);
+
+  if (newMode == VL53L1_DISTANCEMODE_SHORT) {
+    VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_SHORT);
+    VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, SHORT_MODE_TIMING_BUDGET_US);
+    VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, SHORT_MODE_PERIOD_MS);
+    currentTaskPeriodMs = SHORT_MODE_PERIOD_MS;
+
+    // Update noise model for short mode
+    expPointA = SHORT_EXP_POINT_A;
+    expStdA   = SHORT_EXP_STD_A;
+    expPointB = SHORT_EXP_POINT_B;
+    expStdB   = SHORT_EXP_STD_B;
+
+    DEBUG_PRINTI("ZR2: Switched to SHORT mode\n");
+  } else {
+    VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_LONG);
+    VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, LONG_MODE_TIMING_BUDGET_US);
+    VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, LONG_MODE_PERIOD_MS);
+    currentTaskPeriodMs = LONG_MODE_PERIOD_MS;
+
+    // Update noise model for long mode
+    expPointA = LONG_EXP_POINT_A;
+    expStdA   = LONG_EXP_STD_A;
+    expPointB = LONG_EXP_POINT_B;
+    expStdB   = LONG_EXP_STD_B;
+
+    DEBUG_PRINTI("ZR2: Switched to LONG mode\n");
+  }
+
+  updateNoiseModel();
+  currentDistanceMode = newMode;
+
+  VL53L1_StartMeasurement(&dev);
+}
 
 static uint16_t zRanger2GetMeasurement(VL53L1_Dev_t *dev)
 {
@@ -102,7 +178,7 @@ void zRanger2Init(void)
   xTaskCreate(zRanger2Task, ZRANGER2_TASK_NAME, ZRANGER2_TASK_STACKSIZE, NULL, ZRANGER2_TASK_PRI, NULL);
 
   // pre-compute constant in the measurement noise model for kalman
-  expCoeff = logf(expStdB / expStdA) / (expPointB - expPointA);
+  updateNoiseModel();
 
   isInit = true;
 }
@@ -121,11 +197,13 @@ void zRanger2Task(void* arg)
 
   systemWaitStart();
 
-  // Configure sensor for continuous (back-to-back) mode
+  // Configure sensor for continuous (back-to-back) mode — start in SHORT
   VL53L1_StopMeasurement(&dev);
   VL53L1_SetDistanceMode(&dev, VL53L1_DISTANCEMODE_SHORT);
-  VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, 25000);
-  VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, 25); // Match the task rate
+  VL53L1_SetMeasurementTimingBudgetMicroSeconds(&dev, SHORT_MODE_TIMING_BUDGET_US);
+  VL53L1_SetInterMeasurementPeriodMilliSeconds(&dev, SHORT_MODE_PERIOD_MS);
+  currentDistanceMode = VL53L1_DISTANCEMODE_SHORT;
+  currentTaskPeriodMs = SHORT_MODE_PERIOD_MS;
 
   // Start continuous ranging
   VL53L1_StartMeasurement(&dev);
@@ -133,7 +211,7 @@ void zRanger2Task(void* arg)
   static int consecutive_errors = 0;
 
   while (1) {
-    vTaskDelayUntil(&lastWakeTime, M2T(25));
+    vTaskDelayUntil(&lastWakeTime, M2T(currentTaskPeriodMs));
 
     uint16_t range_new = zRanger2GetMeasurement(&dev);
 
@@ -146,10 +224,19 @@ void zRanger2Task(void* arg)
       float distance = (float)range_last * 0.001f; // Scale from [mm] to [m]
       float stdDev = expStdA * (1.0f  + expf( expCoeff * (distance - expPointA)));
       rangeEnqueueDownRangeInEstimator(distance, stdDev, xTaskGetTickCount());
+
+      // Auto distance mode switching with hysteresis
+      if (currentDistanceMode == VL53L1_DISTANCEMODE_SHORT &&
+          range_new > SHORT_TO_LONG_THRESHOLD) {
+        switchDistanceMode(VL53L1_DISTANCEMODE_LONG);
+      } else if (currentDistanceMode == VL53L1_DISTANCEMODE_LONG &&
+                 range_new < LONG_TO_SHORT_THRESHOLD) {
+        switchDistanceMode(VL53L1_DISTANCEMODE_SHORT);
+      }
     } else {
       consecutive_errors++;
-      // If sensor is stuck for > 1 second (40 * 25ms), force a restart
-      if (consecutive_errors > 40) {
+      // If sensor is stuck for > 1 second, force a restart
+      if (consecutive_errors > (int)(1000 / currentTaskPeriodMs)) {
         DEBUG_PRINTW("ZR2: Sensor stuck, restarting acquisition...\n");
         VL53L1_StopMeasurement(&dev);
         vTaskDelay(M2T(10));
