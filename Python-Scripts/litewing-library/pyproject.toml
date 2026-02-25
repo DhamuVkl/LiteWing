@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Beginner-friendly Python library for LiteWing drone control"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8"
+requires-python = ">=3.11,<3.12"
 authors = [{name = "DhamuVkl"}]
 keywords = ["drone", "crazyflie", "litewing", "education", "robotics"]
 classifiers = [
@@ -16,13 +16,7 @@ classifiers = [
     "Intended Audience :: Education",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
     "Topic :: Education",
 ]

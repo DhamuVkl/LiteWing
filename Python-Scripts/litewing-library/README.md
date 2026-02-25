@@ -6,6 +6,10 @@ LiteWing removes the low-level plumbing from drone programming while keeping the
 
 ## Installation
 
+### Quick Install (Windows)
+Double-click **`install.bat`** — it checks your Python version and installs everything automatically.
+
+### Manual Install
 ```bash
 # Navigate to the litewing-library folder
 cd litewing-library
@@ -15,8 +19,11 @@ pip install -e .
 ```
 
 ### Requirements
-- Python 3.8+
+- **Python 3.11** (required — other versions will not work)
+  - Download: [Python 3.11.9](https://www.python.org/downloads/release/python-3119/)
+  - ⚠️ Check **"Add Python to PATH"** during installation!
 - [cflib](https://github.com/bitcraze/crazyflie-lib-python) (installed automatically)
+- [matplotlib](https://matplotlib.org/) (installed automatically)
 
 ## Quick Start
 
