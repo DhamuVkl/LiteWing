@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: Education",
 ]
-dependencies = ["cflib @ git+https://github.com/Circuit-Digest/crazyflie-lib-python.git", "matplotlib"]
+dependencies = ["cflib @ https://github.com/Circuit-Digest/crazyflie-lib-python/archive/refs/heads/master.zip", "matplotlib"]
 
 [project.optional-dependencies]
 dev = ["pytest"]

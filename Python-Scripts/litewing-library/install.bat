@@ -1,10 +1,20 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM --- Setup ANSI color codes ---
+for /f %%e in ('powershell -NoProfile -Command "[char]27"') do set "E=%%e"
+set "R=!E![0m"
+set "RED=!E![91m"
+set "GRN=!E![92m"
+set "YEL=!E![93m"
+set "CYN=!E![96m"
+set "BLD=!E![1m"
+set "DIM=!E![90m"
+
 echo.
-echo   ============================================
-echo        LiteWing Library Installer
-echo   ============================================
+echo   !CYN!============================================!R!
+echo   !BLD!     LiteWing Library Installer!R!
+echo   !CYN!============================================!R!
 echo.
 
 REM --- Configuration ---
@@ -13,53 +23,21 @@ set "PYTHON_INSTALLER=python-%PYTHON_VERSION%-amd64.exe"
 set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_INSTALLER%"
 set "PYTHON_INSTALL_DIR=%LOCALAPPDATA%\Programs\Python\Python311"
 
-set "GIT_VERSION=2.47.1.2"
-set "GIT_INSTALLER=Git-%GIT_VERSION%-64-bit.exe"
-set "GIT_URL=https://github.com/git-for-windows/git/releases/download/v%GIT_VERSION%.windows.1/%GIT_INSTALLER%"
-
 REM =========================================
-REM  STEP 1: Check System Date and Time
+REM  STEP 1: Verify System Date and Time
 REM =========================================
-echo   [Step 1/4] Checking system date and time...
-
-for /f %%y in ('powershell -NoProfile -Command "(Get-Date).Year"') do set "CURRENT_YEAR=%%y"
-
-if "!CURRENT_YEAR!" == "" (
-    echo   [WARN] Could not read system date.
-    echo          SSL downloads may fail if the clock is wrong.
-    echo.
-    goto :date_done
-)
-
-if !CURRENT_YEAR! LSS 2025 goto :date_wrong
-if !CURRENT_YEAR! GTR 2030 goto :date_wrong
-
-echo   [OK] System date: %DATE% %TIME%
+echo   !BLD![Step 1/3]!R! System date and time:
 echo.
-goto :date_done
-
-:date_wrong
+echo            !BLD!%DATE%  %TIME%!R!
 echo.
-echo   [ERROR] System date appears to be wrong!
-echo           Current date: %DATE% %TIME%
-echo           Expected year: 2025 or later
+echo   !YEL!Make sure the above date and time is correct!!R!
+echo   !DIM!Wrong date/time will cause download errors!R!
 echo.
-echo   Downloads will FAIL with incorrect date (SSL errors).
-echo.
-echo   Fix: Right-click the clock in taskbar - Adjust date/time
-echo        Turn ON "Set time automatically"
-echo.
-echo   After fixing the date, run this installer again.
-echo.
-pause
-exit /b 1
-
-:date_done
 
 REM =========================================
 REM  STEP 2: Check / Install Python 3.11
 REM =========================================
-echo   [Step 2/4] Checking for Python 3.11...
+echo   !BLD![Step 2/3]!R! Checking for Python 3.11...
 
 set "PY311_CMD="
 
@@ -85,14 +63,19 @@ if exist "%PYTHON_INSTALL_DIR%\python.exe" (
     goto :python_found
 )
 
-REM --- Not found — download and install ---
-echo   [!] Python 3.11 not found. Installing automatically...
+REM --- Not found - download and install ---
+echo   !YEL![!] Python 3.11 not found. Installing automatically...!R!
 echo.
 
 call :download_file "%PYTHON_URL%" "%TEMP%\%PYTHON_INSTALLER%" "Python %PYTHON_VERSION%"
 if errorlevel 1 (
     echo.
-    echo   [ERROR] Python download failed!
+    echo   !RED![ERROR] Python download failed!!R!
+    echo.
+    echo   Possible causes:
+    echo     - No internet connection
+    echo     - System date/time is wrong - causes SSL errors
+    echo.
     echo   Manual download: https://www.python.org/downloads/release/python-3119/
     echo.
     pause
@@ -101,20 +84,20 @@ if errorlevel 1 (
 
 echo.
 echo   Installing Python %PYTHON_VERSION%...
-echo   (This takes 1-2 minutes, please wait...)
+echo   !DIM!This takes 1-2 minutes, please wait...!R!
 echo.
 
 "%TEMP%\%PYTHON_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0 Include_launcher=1
 
 if errorlevel 1 (
-    echo   [ERROR] Python installation failed!
+    echo   !RED![ERROR] Python installation failed!!R!
     echo   Try running the installer manually: %TEMP%\%PYTHON_INSTALLER%
     echo.
     pause
     exit /b 1
 )
 
-echo   [OK] Python %PYTHON_VERSION% installed!
+echo   !GRN![OK] Python %PYTHON_VERSION% installed!!R!
 echo.
 del "%TEMP%\%PYTHON_INSTALLER%" >nul 2>&1
 
@@ -123,84 +106,15 @@ set "PATH=%PYTHON_INSTALL_DIR%;%PYTHON_INSTALL_DIR%\Scripts;%PATH%"
 set "PY311_CMD=%PYTHON_INSTALL_DIR%\python.exe"
 
 :python_found
-echo   [OK] Python: !PY311_CMD!
-for /f "tokens=*" %%v in ('!PY311_CMD! --version 2^>^&1') do echo        %%v
+echo   !GRN![OK]!R! Python: !PY311_CMD!
+for /f "tokens=*" %%v in ('!PY311_CMD! --version 2^>^&1') do echo        !DIM!%%v!R!
 echo.
 
 REM =========================================
-REM  STEP 3: Check / Install Git
+REM  STEP 3: Install LiteWing Library
 REM =========================================
-echo   [Step 3/4] Checking for Git...
-
-git --version >nul 2>&1
-if not errorlevel 1 (
-    for /f "tokens=*" %%v in ('git --version 2^>^&1') do echo   [OK] %%v
-    echo.
-    goto :git_found
-)
-
-REM Check common install location
-if exist "%ProgramFiles%\Git\cmd\git.exe" (
-    set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
-    for /f "tokens=*" %%v in ('git --version 2^>^&1') do echo   [OK] %%v
-    echo.
-    goto :git_found
-)
-
-REM --- Git not found — download and install ---
-echo   [!] Git not found. Installing automatically...
-echo.
-
-call :download_file "%GIT_URL%" "%TEMP%\%GIT_INSTALLER%" "Git %GIT_VERSION%"
-if errorlevel 1 (
-    echo.
-    echo   [ERROR] Git download failed!
-    echo   Manual download: https://git-scm.com/download/win
-    echo.
-    pause
-    exit /b 1
-)
-
-echo.
-echo   Installing Git %GIT_VERSION%...
-echo   (This takes 1-2 minutes, please wait...)
-echo.
-
-"%TEMP%\%GIT_INSTALLER%" /VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS
-
-if errorlevel 1 (
-    echo   [ERROR] Git installation failed!
-    echo   Try running the installer manually: %TEMP%\%GIT_INSTALLER%
-    echo.
-    pause
-    exit /b 1
-)
-
-echo   [OK] Git installed!
-echo.
-del "%TEMP%\%GIT_INSTALLER%" >nul 2>&1
-
-REM Refresh PATH for this session
-set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
-
-git --version >nul 2>&1
-if errorlevel 1 (
-    echo   [WARN] Git installed but not detected in PATH.
-    echo          Please close this window and run install.bat again.
-    echo.
-    pause
-    exit /b 1
-)
-for /f "tokens=*" %%v in ('git --version 2^>^&1') do echo   [OK] %%v
-echo.
-
-:git_found
-
-REM =========================================
-REM  STEP 4: Install LiteWing Library
-REM =========================================
-echo   [Step 4/4] Installing LiteWing library...
-echo   (Downloads cflib + matplotlib = may take a few minutes)
+echo   !BLD![Step 3/3]!R! Installing LiteWing library...
+echo   !DIM!Downloads cflib + matplotlib = may take a few minutes!R!
 echo.
 
 !PY311_CMD! -m pip install --upgrade pip >nul 2>&1
@@ -208,8 +122,14 @@ echo.
 
 if errorlevel 1 (
     echo.
-    echo   [ERROR] LiteWing installation failed!
-    echo   Try: !PY311_CMD! -m pip install -e . --verbose
+    echo   !RED![ERROR] LiteWing installation failed!!R!
+    echo.
+    echo   Possible causes:
+    echo     - No internet connection
+    echo     - System date/time is wrong - causes SSL errors
+    echo       !YEL!Fix: Right-click clock, Adjust date/time, Set time automatically!R!
+    echo.
+    echo   Try manually: !PY311_CMD! -m pip install -e . --verbose
     echo.
     pause
     exit /b 1
@@ -219,22 +139,24 @@ REM =========================================
 REM  Verify
 REM =========================================
 echo.
-!PY311_CMD! -c "from litewing import LiteWing; print('  [OK] LiteWing library loaded successfully!')" 2>nul
+!PY311_CMD! -c "from litewing import LiteWing; print('  \033[92m[OK] LiteWing library imported successfully!\033[0m')" 2>nul
+if errorlevel 1 (
+    echo   !YEL![WARN] LiteWing installed but import check failed.!R!
+)
 
 echo.
-echo   ============================================
-echo        Installation Complete!
-echo   ============================================
+echo   !GRN!============================================!R!
+echo   !GRN!!BLD!       Installation Complete!  !R!
+echo   !GRN!============================================!R!
 echo.
-echo   All prerequisites installed:
-echo     [OK] Python 3.11
-echo     [OK] Git
-echo     [OK] LiteWing (cflib + matplotlib)
+echo   !GRN![OK]!R! Python 3.11
+echo   !GRN![OK]!R! LiteWing library
+echo   !GRN![OK]!R! cflib + matplotlib
 echo.
-echo   To fly your drone:
+echo   !BLD!To fly your drone:!R!
 echo     1. Turn on the drone
 echo     2. Connect to the drone's WiFi network
-echo     3. Run: !PY311_CMD! examples\level_1\01_battery_voltage.py
+echo     3. Run: !CYN!!PY311_CMD! examples\level_1\01_battery_voltage.py!R!
 echo.
 pause
 exit /b 0
